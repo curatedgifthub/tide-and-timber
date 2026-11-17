@@ -1,0 +1,5 @@
+# Settings for `supabase functions deploy`. The project itself is managed in the dashboard.
+[functions.game]
+# The function checks the caller's sign-in itself (auth.getUser), which works with both the
+# legacy JWT secret and the newer signing keys, so the gateway check is switched off.
+verify_jwt = false

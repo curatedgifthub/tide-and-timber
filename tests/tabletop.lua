@@ -1,0 +1,444 @@
+-- From the source root: lua tests/tabletop.lua
+package.path="card_battle_sim/?.lua;./?.lua;"..package.path
+local L=require('tabletop.library')
+local M=require('tabletop.match')
+local B=require('battle')
+local A=require('abilities')
+local Chains=require('chains')
+local U=require('util')
+local cases={}
+local function test(label,fn) cases[#cases+1]={label,fn} end
+local function cfg(size)
+  -- Both seats computer-controlled, for matches run through tabletop.match.
+  local c=L.new();c.controllers={"AI","AI"}
+  L.starter(c,1,size);L.starter(c,2,size);return c
+end
+-- Every selected copy exists exactly once. Ownership is fixed, except that a Double Agent
+-- (card.agent) becomes the property of the player it is deployed against.
+local function integrity(m,c)
+  local seen,counts,agents={},{{},{}},{}
+  for p,pl in ipairs(m.state.players) do
+    assert(#pl.hand<=#c.decks[1]+#c.decks[2])
+    for _,zone in ipairs({pl.rows[1],pl.rows[2],pl.hand,pl.deck,pl.discard}) do
+      for _,u in ipairs(zone) do
+        assert(not seen[u.uid],"duplicate instance");seen[u.uid]=true
+        local t=u.card.agent and agents or counts[u.owner];t[u.card.id]=(t[u.card.id] or 0)+1
+        if zone==pl.discard then assert(u.owner==p and not u.hp) end
+        if zone==pl.rows[1] or zone==pl.rows[2] then assert(u.controller==p and u.hp,"Unit controller must match its battlefield") end
+      end
+    end
+  end
+  for p=1,2 do for _,id in ipairs(c.decks[p]) do
+    local t=L.cards.by_id[id].agent and agents or counts[p]
+    t[id]=assert(t[id],"outside selection")-1
+  end end
+  for _,t in ipairs({counts[1],counts[2],agents}) do for _,n in pairs(t) do assert(n==0) end end
+end
+local function unit(s,p,id,row)
+  local c=L.cards.by_id[id];s.next_id=s.next_id+1
+  local u={card=c,uid=s.next_id,owner=p,controller=p,hp=c.health,mod=0,guard=0,activated={}}
+  if row then table.insert(s.players[p].rows[row],u) end
+  return u
+end
+test("The card pool is exactly the cards with their own artwork",function()
+  local C=L.cards;local total=0
+  assert(#L.factions==3 and L.factions[1]=="Fantasy" and L.factions[2]=="Water" and L.factions[3]=="Super")
+  for _,f in ipairs({"Fantasy","Water","Super"}) do
+    local inPool={}
+    for _,card in ipairs(L.collection(f)) do inPool[card.id]=true end
+    for _,card in ipairs(C[f]) do
+      local art=L.art[card.id]
+      assert((art~=nil)==(inPool[card.id]==true),card.id.." pool membership must match artwork")
+      assert((art~=nil)==(L.owned[f][card.id]~=nil),card.id.." draftability must match artwork")
+      if art then
+        local file=assert(io.open(art,"rb"),card.id.." thumbnail missing: "..art);file:close()
+        assert(art=="tabletop/assets/"..f:lower().."/"..card.number..".png");total=total+1
+      end
+    end
+  end
+  for id in pairs(L.art) do assert(C.by_id[id],"artwork for unknown card "..id) end
+  assert(L.size("Fantasy")==61 and L.size("Water")==74 and L.size("Super")==31 and total==166)
+  local c=L.new()
+  for _,id in ipairs({'Fantasy:34','Fantasy:59','Fantasy:61','Fantasy:67'}) do
+    assert(not L.edit(c,1,id,1),id.." has no artwork but was accepted")
+  end
+end)
+test("Explicit editable collections, copy limits and 20 up to the full collection",function()
+  local c=L.new();assert(not L.valid(c,1))
+  assert(not L.edit(c,1,'Fantasy:71',1));assert(not L.edit(c,1,'Water:1',1))
+  for _=1,3 do assert(L.edit(c,1,'Fantasy:1',1)) end
+  assert(not L.edit(c,1,'Fantasy:1',1));assert(L.edit(c,1,'Fantasy:1',-1))
+  for _=1,8 do assert(L.edit(c,2,'Water:31',1)) end
+  assert(not L.edit(c,2,'Water:31',1))
+  for _,f in ipairs(L.factions) do
+    c.factions[1]=f;local max=L.size(f)
+    for n=20,max do L.starter(c,1,n);assert(#c.decks[1]==n and L.valid(c,1)) end
+    L.starter(c,1,19);assert(not L.valid(c,1))
+    L.full(c,1);assert(#c.decks[1]==max and L.valid(c,1))
+    for i,card in ipairs(L.collection(f)) do assert(c.decks[1][i]==card.id) end
+    assert(not L.edit(c,1,f..':1',1),"cannot exceed the full collection size")
+  end
+end)
+test("Preset round trip, draft isolation and invalid input rejection",function()
+  local c=cfg(30);c.mode=2;table.remove(c.decks[1])
+  local raw=L.encode(c);local other=assert(L.decode(raw));assert(L.encode(other)==raw and other.mode==2)
+  assert(other.controllers[1]=="Human" and other.controllers[2]=="Human" and other.seed==nil)
+  assert(L.valid(other,1));assert(L.valid(other,2));other.decks[1][1]="";assert(c.decks[1][1]~="")
+  assert(not L.decode(raw:gsub('Fantasy:48','Water:48')))
+  assert(not L.decode(raw:gsub('TT2','new format')))
+  assert(not L.decode(raw:gsub('\nrandom\n','\n-9\n')))
+  -- A preset from before online play (local format 4, fixed seed) loads as single player.
+  local legacy=assert(L.decode((raw:gsub('^TT2\n2\nrandom\nHuman\nHuman\n','TT2\n4\n1194\nAI\nAI\n'))))
+  assert(legacy.mode==1 and legacy.seed==nil and legacy.controllers[2]=="AI" and #legacy.decks[2]==30)
+  assert(not L.decode((raw:gsub('^TT2\n2\n','TT2\n9\n'))))
+  -- A preset saved before the art-only pool keeps its other cards and reports the removed ones.
+  local old=assert(L.decode(raw:gsub('Fantasy:1,','Fantasy:61,Fantasy:1,',1)))
+  assert(#old.removed==1 and old.removed[1]=='Fantasy:61' and #old.decks[1]==#other.decks[1])
+  assert(not L.decode(raw:gsub('Fantasy\n','Super\n',1)),"a deck cannot be loaded under another faction")
+end)
+test("Separate shuffled instances, deterministic hands and selected-copy conservation",function()
+  local c=cfg(30);local saved=L.encode(c);local m=M.new(c,702);local n=M.new(c,702);local different=M.new(c,703)
+  for p=1,2 do
+    local a,b=m.state.players[p],n.state.players[p];assert(#a.hand==20 and #a.deck==10)
+    local diff=false
+    for i=1,20 do
+      assert(a.hand[i]~=b.hand[i] and a.hand[i].uid==b.hand[i].uid)
+      diff=diff or a.hand[i].uid~=different.state.players[p].hand[i].uid
+    end
+    assert(diff)
+  end
+  integrity(m,c);B.draw(m.state,1,80);assert(#m.state.players[1].hand==30 and #m.state.players[1].deck==0)
+  assert(saved==L.encode(c));integrity(m,c)
+end)
+test("Each seat brings an independent selection from 20 up to its full collection",function()
+  for _,sizes in ipairs({{20,74},{61,30},{30,20},{21,73}}) do
+    local c=cfg();for p=1,2 do L.starter(c,p,sizes[p]) end
+    local m=M.new(c,2026)
+    for p,pl in ipairs(m.state.players) do assert(#pl.hand==20 and #pl.deck==sizes[p]-20) end
+    integrity(m,c)
+  end
+  local c=cfg();L.full(c,1);assert(L.valid(c,1))
+  c.decks[1][#c.decks[1]+1]='Fantasy:1';assert(not L.valid(c,1),"over the full collection size")
+  c=cfg(20);table.remove(c.decks[1]);assert(not L.valid(c,1))
+  assert(not pcall(M.new,c,1));local old=L.encode(c):gsub("TT2","TT1\n30")
+  local loaded=assert(L.decode(old));assert(#loaded.decks[1]==19 and not L.valid(loaded,1))
+end)
+test("Halfling Courier automatically draws the exact top copy in Back only",function()
+  for _,n in ipairs({20,30,61}) do
+    for row=1,2 do
+      local c=cfg(n);local m
+      -- Find a real dealt hand containing Courier with Fantasy acting first.
+      for seed=1,100 do
+        local candidate=M.new(c,seed)
+        if candidate.state.active==1 then
+          for _,u in ipairs(candidate.state.players[1].hand) do
+            if u.card.id=='Fantasy:4' then m=candidate;break end
+          end
+        end
+        if m then break end
+      end
+      local pl=assert(m).state.players[1];local before=#pl.deck;local top=pl.deck[before]
+      local index;for i,u in ipairs(pl.hand) do if u.card.id=='Fantasy:4' then index=i end end
+      assert(m:act({type='play',index=index,row=row,pos=1}))
+      local drew=row==2 and before>0
+      assert(#pl.hand==(drew and 20 or 19) and #pl.deck==before-(drew and 1 or 0))
+      if row==2 then
+        local receipt=assert(m.draws[1])
+        assert(receipt.seat==1 and receipt.source=='Halfling Courier' and receipt.before==before and receipt.remaining==#pl.deck)
+        if drew then assert(pl.hand[#pl.hand]==top and receipt.cards[1]==top)
+        else assert(#receipt.cards==0 and receipt.reason=='draw deck empty') end
+        local record=table.concat(m.state.log,'\n')
+        assert(record:find('Halfling Courier drew',1,true) and (drew or record:find('draw deck empty',1,true)))
+      else assert(#m.draws==0) end
+      integrity(m,c)
+    end
+  end
+end)
+test("Printed-rank Bridge after insertion, once per deployment, current Strength scoring",function()
+  local s=M.new(cfg(),77).state;s.active=2
+  unit(s,2,'Water:2',1);local bridge=unit(s,2,'Water:21')
+  local rank3=unit(s,2,'Water:28',2);rank3.mod=3
+  s.players[2].hand={bridge,unit(s,2,'Water:1')}
+  assert(not B.play(s,2,1,1,4));assert(#s.players[2].hand==2)
+  assert(B.play(s,2,1,1,2));assert(Chains.qualify(s.players[2],bridge,3,true))
+  assert(B.score(s,2)==9 and s.stats.chain_activated[2]==1)
+  B.check_chains(s);assert(s.stats.chain_activated[2]==1)
+end)
+test("Nested search choices allow explicit bottom order and find only deck cards",function()
+  local m=M.new(cfg(),12);m.controllers[1]="Human";local s=m.state;s.active=1
+  local pl=s.players[1]
+  pl.deck={unit(s,1,'Fantasy:1'),unit(s,1,'Fantasy:40'),unit(s,1,'Fantasy:6'),unit(s,1,'Fantasy:32')}
+  pl.hand={unit(s,1,'Fantasy:5'),unit(s,1,'Fantasy:1')}
+  assert(m:act({type="play",index=1,row=2,pos=1}));assert(m.prompt.context.op=='search')
+  assert(#m.prompt.options==2 and #m.prompt.context.cards==3)
+  assert(m:choose(2));assert(m.prompt.kind=="bottom_order")
+  assert(m:choose(2));assert(not m.prompt);assert(pl.hand[2].card.id=='Fantasy:40')
+  assert(pl.deck[1].card.id=='Fantasy:32' and pl.deck[2].card.id=='Fantasy:6')
+end)
+test("Theft, discard ownership, required targets and optional extra plays",function()
+  local m=M.new(cfg(),42);local s=m.state;s.active=1
+  local hunter=unit(s,1,'Super:55');local fish=unit(s,2,'Water:43');s.players[2].deck={fish}
+  B.resolve(s,1,hunter,A.get(hunter.card,'deploy'));assert(fish.owner==2 and fish.controller==1)
+  assert(B.play(s,1,#s.players[1].hand,1,1))
+  B.damage(s,2,fish,99);assert(s.players[2].discard[#s.players[2].discard]==fish)
+  s.active=1;s.players[1].hand={unit(s,1,'Fantasy:31'),unit(s,1,'Super:70'),unit(s,1,'Fantasy:1')}
+  assert(not B.playable(s,1,1));assert(B.play(s,1,2));assert(s.active==1 and s.plays_left==2)
+  assert(B.end_extra(s,1));assert(s.active==2 and not s.players[1].passed)
+end)
+test("Chosen team copies, rooted Treant, and selectable Chain 5 buffs",function()
+  local s=M.new(cfg(),13).state
+  local a=unit(s,1,'Super:1',1);local b=unit(s,1,'Super:1',1)
+  unit(s,1,'Super:13',1);unit(s,1,'Super:30',1)
+  s.chooser=function(_,_,_,options) return #options end
+  local team=unit(s,1,'Super:58');B.resolve(s,1,team,A.get(team.card,'play'))
+  assert(a.mod==0 and b.mod==2)
+  local tree=unit(s,2,'Fantasy:48',1);local move=unit(s,1,'Water:47')
+  B.resolve(s,1,move,A.get(move.card,'deploy'));local _,row=B.position(s,tree);assert(row==1)
+  s.players[1].rows={{},{}}
+  for r=1,2 do for _,id in ipairs({1,5,8,13,26}) do unit(s,1,'Water:'..id,r) end end
+  local deep=unit(s,1,'Water:70');B.resolve(s,1,deep,A.get(deep.card,'play'))
+  for r=1,2 do for _,u in ipairs(s.players[1].rows[r]) do assert(u.mod==(r==2 and 2 or 0)) end end
+end)
+test("Auto-passing without targets and tied empty rounds terminate at three rounds",function()
+  -- Fantasy has only six illustrated Effects that need a target, too few for 20 cards,
+  -- so both seats use Water (Goldfish allows eight copies).
+  local c=L.new();c.factions={"Water","Water"}
+  local targets={{31,32,57,36,38,39,58},{31,32,57,36,38,39,58}}
+  for p=1,2 do
+    for i=1,20 do assert(L.edit(c,p,c.factions[p]..':'..targets[p][(i-1)%7+1],1)) end
+  end
+  local result;local m=M.new(c,2,function(r) result=r end)
+  assert(m.state.finished and result.winner==0 and #result.rounds==3);integrity(m,c)
+end)
+-- Every design in the playable pool is played into a crowded board twice: once normally and once
+-- with its own Deploy/Effect definition removed. The two results must differ.
+test("Every card in the pool plays legally and its Deploy or Effect ability changes the game",function()
+  local base=cfg(30);local realget=A.get
+  local function snap(s)
+    local t={'plays'..s.plays_left..tostring(s.extra_turn),'log'..#s.log}
+    for p=1,2 do local pl=s.players[p]
+      for _,z in ipairs({'hand','deck','discard'}) do
+        local ids={};for _,u in ipairs(pl[z]) do ids[#ids+1]=u.uid end;t[#t+1]=z..p..':'..table.concat(ids,',')
+      end
+      for r=1,2 do for i,u in ipairs(pl.rows[r]) do
+        t[#t+1]=table.concat({u.uid,p,r,i,B.strength(s,u),u.hp,u.guard or 0,tostring(u.negate_damage),tostring(u.disabled)},'/')
+      end end
+    end
+    return table.concat(t,'|')
+  end
+  local function setup(f,n,id)
+    local s=M.new(base,n).state;s.active=1;s.plays_left=1;s.extra_turn=nil
+    for p=1,2 do local pl=s.players[p];pl.rows={{},{}};pl.hand={};pl.deck={};pl.discard={};pl.passed=false end
+    -- The Comic front row holds each pair partner: both Dans, a Warden to replace, both Sidekicks.
+    local front={Water={1,4,8,11,26},Fantasy={1,5,11,17,41},Super={12,71,72,61,74,75}}
+    for _,k in ipairs(front[f]) do unit(s,1,f..':'..k,1) end
+    for _,x in ipairs({'Fantasy:19','Fantasy:26','Fantasy:15','Fantasy:12'}) do unit(s,1,x,2).mod=-1 end
+    for _,x in ipairs({'Water:12','Water:49','Water:7','Fantasy:17'}) do unit(s,2,x,1) end
+    for _,x in ipairs({'Water:2','Water:61','Water:27'}) do unit(s,2,x,2) end
+    for p=1,2 do for r=1,2 do for _,u in ipairs(s.players[p].rows[r]) do if u.hp>2 then u.hp=u.hp-2 end end end end
+    for i=1,6 do s.players[1].deck[i]=unit(s,1,f..':'..(i*3));s.players[2].deck[i]=unit(s,2,'Water:'..(i*4)) end
+    for _,k in ipairs({1,2,31,33,10}) do table.insert(s.players[1].discard,unit(s,1,f..':'..k)) end
+    table.insert(s.players[2].discard,unit(s,2,'Water:3'))
+    if f=='Super' then table.insert(s.players[1].deck,1,unit(s,1,'Super:73')) end
+    for i=1,3 do s.players[2].hand[i]=unit(s,2,'Water:'..(i+20)) end
+    -- Amount prompts list the largest value first; the last entry would be "none".
+    s.chooser=function(_,_,kind,options) return kind=='amount' and 1 or #options end
+    s.players[1].hand={unit(s,1,id),unit(s,1,f..':7'),unit(s,1,f..':8')}
+    return s
+  end
+  local allowed={}
+  for _,f in ipairs(L.factions) do for _,card in ipairs(L.collection(f)) do
+    local id,n=card.id,card.number
+    local trig=A[f] and A[f][n] or {}
+    local s=setup(f,n,id);local row,pos=card.type=='Unit' and 2 or nil,card.type=='Unit' and 5 or nil
+    if card.agent then pos=#s.players[2].rows[2]+1 end
+    if not B.playable(s,1,1) then assert(allowed[id]=='unplayable',id..' '..card.name..' cannot be played')
+    else
+      assert(B.play(s,1,1,row,pos),id..' rejected')
+      if trig.deploy or trig.play then
+        local plain=setup(f,n,id)
+        A.get=function(c,t) if c.id==id then return nil end return realget(c,t) end
+        local ok=pcall(B.play,plain,1,1,row,pos);A.get=realget;assert(ok)
+        assert(snap(s)~=snap(plain) or allowed[id]=='quiet',id..' '..card.name..' ability had no effect')
+      end
+    end
+  end end
+end)
+test("New Water cards: Lighthouse, Deep-Sea Diver, The White Whale, Bleached Reef",function()
+  local function fresh()
+    local m=M.new(cfg(),31);local s=m.state;s.active=1;s.plays_left=1;s.extra_turn=nil
+    for p=1,2 do local pl=s.players[p];pl.rows={{},{}};pl.hand={};pl.deck={};pl.discard={};pl.passed=false end
+    return m,s
+  end
+  -- Lighthouse: Bridge rank 3; at the start of each of its controller's turns, top card may go to the bottom.
+  local m,s=fresh();local pl=s.players[1]
+  local a,b,c=unit(s,1,'Water:1'),unit(s,1,'Water:7'),unit(s,1,'Water:12');pl.deck={a,b,c}
+  local light=unit(s,1,'Water:71');pl.hand={light,unit(s,1,'Water:1')}
+  assert(light.card.bridge and light.card.strength==3)
+  s.players[2].hand={unit(s,2,'Water:1')}
+  assert(m:act({type='play',index=1,row=1,pos=1}))
+  assert(s.active==2);m.controllers[1]="Human";m.controllers[2]="AI"
+  assert(m:act({type='ai'}))
+  assert(m.prompt and m.prompt.kind=='beacon' and m.prompt.context.cards[1]==c)
+  assert(m:choose(2));assert(pl.deck[1]==c and pl.deck[3]==b,"top card moved to the bottom")
+  assert(table.concat(s.log,'\n'):find('sends the top card',1,true))
+  -- Deep-Sea Diver: looks at the bottom 3, takes one, rest stay at the bottom in the chosen order.
+  m,s=fresh();pl=s.players[1];m.controllers[1]="Human"
+  local d1,d2,d3,top=unit(s,1,'Water:61'),unit(s,1,'Water:31'),unit(s,1,'Water:40'),unit(s,1,'Water:2')
+  pl.deck={d1,d2,d3,top}
+  pl.hand={unit(s,1,'Water:72'),unit(s,1,'Water:1')}
+  assert(m:act({type='play',index=1,row=2,pos=1}))
+  assert(m.prompt.context.op=='search' and m.prompt.context.bottom and #m.prompt.options==3)
+  assert(m.prompt.context.cards[1]==d1 and m.prompt.context.cards[3]==d3)
+  assert(m:choose(1));assert(pl.hand[#pl.hand]==d1,"Blue Whale from the bottom is in hand")
+  assert(m.prompt.kind=='bottom_order');assert(m:choose(2))
+  assert(not m.prompt and #pl.deck==3 and pl.deck[3]==top,"top card untouched")
+  -- The White Whale: enters with 4 unpreventable damage; opposing damage it survives gives +2.
+  m,s=fresh();pl=s.players[1]
+  local whale=unit(s,1,'Water:73');pl.hand={whale,unit(s,1,'Water:1')};whale.guard=5
+  assert(B.play(s,1,1,1,1));assert(whale.hp==8 and B.strength(s,whale)==7,"self-damage does not trigger Relentless")
+  B.damage(s,2,whale,3);assert(whale.hp==5 and B.strength(s,whale)==9)
+  B.damage(s,1,whale,1);assert(whale.hp==4 and B.strength(s,whale)==9,"own damage is not opposing")
+  B.damage(s,2,whale,4);assert(not B.position(s,whale),"no bonus once destroyed")
+  -- Bleached Reef: strips positive boosts in the chosen opposing row; otherwise draws 1.
+  m,s=fresh();pl=s.players[1];s.chooser=function(_,_,kind,options) return 1 end
+  local boosted,weak,plain,whaleBack=unit(s,2,'Water:8',1),unit(s,2,'Water:12',1),unit(s,2,'Water:7',1),unit(s,2,'Water:61',2)
+  boosted.mod=3;weak.mod=-2;whaleBack.mod=2
+  pl.deck={unit(s,1,'Water:1')};pl.hand={unit(s,1,'Water:74'),unit(s,1,'Water:1')}
+  assert(B.play(s,1,1));assert(boosted.mod==0 and weak.mod==-2 and plain.mod==0 and whaleBack.mod==2)
+  assert(#pl.deck==1,"no draw when a boost was removed")
+  s.active=1;s.plays_left=1;pl.hand={unit(s,1,'Water:74'),unit(s,1,'Water:1')}
+  assert(B.play(s,1,1));assert(#pl.deck==0 and #pl.hand==2,"draws when nothing was bleached")
+  -- Blue Whale ignores the area effect, so bleaching the Back row draws instead.
+  s.active=1;s.plays_left=1;s.chooser=function(_,_,kind) return kind=='row' and 2 or 1 end
+  pl.deck={unit(s,1,'Water:2')};pl.hand={unit(s,1,'Water:74'),unit(s,1,'Water:1')}
+  assert(B.play(s,1,1));assert(whaleBack.mod==2 and #pl.deck==0)
+end)
+test("Comic edition: Dinosaur trio, Warden and Phantom, Sidekick order, Monochrome double agents",function()
+  local function fresh()
+    local c=cfg();c.factions={"Super","Fantasy"};L.starter(c,1,30);L.starter(c,2,30)
+    local m=M.new(c,31);local s=m.state;s.active=1;s.plays_left=1;s.extra_turn=nil
+    for p=1,2 do local pl=s.players[p];pl.rows={{},{}};pl.hand={};pl.deck={};pl.discard={};pl.passed=false end
+    s.chooser=function(_,_,_,options) return #options end
+    return m,s
+  end
+  local function turn(s) s.active=1;s.plays_left=1;s.players[1].passed=false end
+  -- Dinosaur Dan + Dan the Dinosaur pull the T-Rex from the draw deck, free of charge.
+  local m,s=fresh();local pl,foe=s.players[1],s.players[2]
+  local rex=unit(s,1,'Super:73');pl.deck={unit(s,1,'Super:2'),rex,unit(s,1,'Super:3')}
+  local e1,e2=unit(s,2,'Fantasy:1',2),unit(s,2,'Fantasy:5',2);local hp1,hp2=e1.hp,e2.hp
+  pl.hand={unit(s,1,'Super:71'),unit(s,1,'Super:72'),unit(s,1,'Super:12'),unit(s,1,'Super:12')}
+  assert(B.play(s,1,1,1,1));assert(#pl.deck==3 and not B.position(s,rex),"one Dan alone summons nothing")
+  turn(s);assert(B.play(s,1,1,1,2))
+  local side,row=B.position(s,rex);assert(side==1 and row==2 and #pl.deck==2 and #pl.hand==2,"T-Rex enters from the deck without a card play")
+  assert(e1.hp==hp1-2 and e2.hp==hp2-2,"its Deploy ability resolves on entry")
+  assert(s.stats.played[1]==2 and rex.controller==1 and rex.hp==8)
+  -- From the hand when no copy is in the draw deck; nothing when there is no copy at all.
+  m,s=fresh();pl=s.players[1];rex=unit(s,1,'Super:73')
+  unit(s,1,'Super:72',1);pl.hand={unit(s,1,'Super:71'),rex,unit(s,1,'Super:12')}
+  assert(B.play(s,1,1,1,1));assert(B.position(s,rex)==1 and #pl.hand==1)
+  m,s=fresh();pl=s.players[1];unit(s,1,'Super:72',1);pl.hand={unit(s,1,'Super:71'),unit(s,1,'Super:12')}
+  assert(B.play(s,1,1,1,1));assert(#B.units(s,1)==2 and table.concat(s.log,'\n'):find('finds no Roaring T-Rex',1,true))
+  -- Adjacent 4-5-6 is a chain, and the T-Rex has a Chain 3 ability.
+  m,s=fresh();pl=s.players[1];rex=unit(s,1,'Super:73');pl.deck={rex}
+  unit(s,1,'Super:71',1);pl.hand={unit(s,1,'Super:72'),unit(s,1,'Super:12')}
+  s.chooser=function(_,_,kind,options) return kind=='row' and 1 or #options end
+  assert(B.play(s,1,1,1,2));assert(rex.activated.chain and B.strength(s,rex)==9,"4-5-6 activates Apex Predator")
+
+  -- Multiverse Phantom is played only onto a Cosmic Warden and takes its exact position.
+  m,s=fresh();pl,foe=s.players[1],s.players[2]
+  local phantom,warden=unit(s,1,'Super:66'),unit(s,1,'Super:61')
+  pl.hand={phantom,warden,unit(s,1,'Super:12')};pl.deck={unit(s,1,'Super:2')}
+  local ok,why=B.playable(s,1,1);assert(not ok and why:find('Cosmic Warden',1,true))
+  unit(s,1,'Super:12',1);unit(s,1,'Super:24',1)
+  assert(B.play(s,1,2,1,2));turn(s)
+  local a,b,big=unit(s,2,'Fantasy:1',1),unit(s,2,'Fantasy:5',2),unit(s,2,'Fantasy:48',2);local bigHp=big.hp
+  assert(B.playable(s,1,1));assert(B.play(s,1,1))
+  local ps,pr,pi=B.position(s,phantom);assert(ps==1 and pr==1 and pi==2,"takes the Warden's place")
+  assert(not B.position(s,warden) and pl.discard[#pl.discard]==warden and not warden.hp)
+  assert(not B.position(s,a) and big.hp==bigHp-3 and #pl.deck==0 and B.strength(s,phantom)==9)
+  -- The risk: once the Warden is destroyed the Phantom cannot be played.
+  m,s=fresh();pl=s.players[1];phantom=unit(s,1,'Super:66');warden=unit(s,1,'Super:61',1)
+  pl.hand={phantom,unit(s,1,'Super:12')};assert(B.playable(s,1,1))
+  B.damage(s,2,warden,4);assert(not B.position(s,warden) and not B.playable(s,1,1))
+
+  -- Sidekicks: the second one played decides the effect.
+  m,s=fresh();pl,foe=s.players[1],s.players[2]
+  local brave,scared=unit(s,1,'Super:74'),unit(s,1,'Super:75')
+  pl.deck={unit(s,1,'Super:2'),brave,unit(s,1,'Super:3')};pl.hand={scared,unit(s,1,'Super:12'),unit(s,1,'Super:12')}
+  local victim=unit(s,2,'Fantasy:48',1);local vhp=victim.hp
+  assert(B.play(s,1,1,1,1));assert(pl.hand[#pl.hand]==brave and #pl.deck==2,"Scared first: Distress Call fetches Brave Sidekick")
+  assert(m.draws[#m.draws].cards[1]==brave,"the fetch is reported like a draw")
+  turn(s);assert(B.play(s,1,#pl.hand,1,2))
+  assert(B.strength(s,scared)==5 and victim.hp==vhp-3 and brave.guard==0,"Brave second: +3 and 3 damage")
+  m,s=fresh();pl=s.players[1];brave,scared=unit(s,1,'Super:74'),unit(s,1,'Super:75')
+  pl.hand={brave,scared,unit(s,1,'Super:12')};pl.deck={unit(s,1,'Super:2')}
+  assert(B.play(s,1,1,1,1));assert(brave.guard==3,"Brave first: guards itself")
+  turn(s);assert(B.play(s,1,1,1,2))
+  assert(brave.negate_damage and scared.negate_damage and #pl.deck==1 and B.strength(s,scared)==2,"Scared second: both turn ghostly")
+  B.damage(s,2,scared,9);assert(B.position(s,scared) and not scared.negate_damage,"the next opposing damage effect is ignored once")
+  m,s=fresh();pl=s.players[1];pl.hand={unit(s,1,'Super:75'),unit(s,1,'Super:12')};pl.deck={unit(s,1,'Super:2')}
+  assert(B.play(s,1,1,1,1));assert(#pl.deck==0 and #pl.hand==2,"no Brave Sidekick in the deck: draw 1 instead")
+
+  -- Monochrome Spy: deployed on the opposing battlefield, becomes the opponent's card.
+  m,s=fresh();pl,foe=s.players[1],s.players[2]
+  local spy=unit(s,1,'Super:78');pl.hand={spy,unit(s,1,'Super:12'),unit(s,1,'Super:12')}
+  local loot=unit(s,2,'Fantasy:40');foe.discard={unit(s,2,'Fantasy:1'),loot};foe.hand={unit(s,2,'Fantasy:1'),unit(s,2,'Fantasy:39')}
+  unit(s,2,'Fantasy:5',1)
+  assert(not B.play(s,1,1,1,3),"positions are counted on the opposing row");assert(B.play(s,1,1,1,2))
+  local ss,sr,si=B.position(s,spy);assert(ss==2 and sr==1 and si==2 and spy.owner==2 and spy.controller==2)
+  assert(B.score(s,1)==0 and B.score(s,2)==2+spy.card.strength,"its Strength counts for the opponent")
+  assert(pl.hand[#pl.hand]==loot and loot.owner==2 and loot.controller==1,"Vault Heist takes the chosen discard")
+  B.damage(s,1,spy,9);assert(foe.discard[#foe.discard]==spy,"a Double Agent goes to its new owner's discard pile")
+  -- Even a Fantasy deck can pull it back: Monochrome counts as every faction for discard abilities.
+  s.active=2;s.plays_left=1;assert(B.playable(s,2,2));assert(B.play(s,2,2))
+  assert(foe.hand[#foe.hand]==spy,"Fantasy recovery returns the Monochrome Unit")
+  s.active=2;s.plays_left=1;assert(B.play(s,2,#foe.hand,2,1))
+  ss,sr=B.position(s,spy);assert(ss==1 and sr==2 and spy.owner==1,"played back, it lands on the first player's battlefield")
+  -- Monochrome Hood: the top three cards of the opposing draw deck go to its discard pile.
+  m,s=fresh();pl,foe=s.players[1],s.players[2]
+  local d1,d2,d3,d4=unit(s,2,'Fantasy:1'),unit(s,2,'Fantasy:2'),unit(s,2,'Fantasy:3'),unit(s,2,'Fantasy:4')
+  foe.deck={d1,d2,d3,d4};pl.hand={unit(s,1,'Super:77'),unit(s,1,'Super:12')}
+  assert(B.play(s,1,1,2,1));assert(#foe.deck==1 and foe.deck[1]==d1 and #foe.discard==3 and foe.discard[1]==d4)
+  -- Monochrome Vigilante: trade one of your Units for an opposing one (printed 5 or less, movable).
+  m,s=fresh();pl,foe=s.players[1],s.players[2]
+  local weak,strong=unit(s,1,'Super:2',1),unit(s,1,'Super:30',1)
+  local five,treant,giant=unit(s,2,'Fantasy:41',1),unit(s,2,'Fantasy:48',1),unit(s,2,'Fantasy:64',2)
+  assert(five.card.strength<=5 and giant.card.strength>5,"fixture ranks")
+  local vig=unit(s,1,'Super:76');pl.hand={vig,unit(s,1,'Super:12')}
+  s.chooser=nil
+  assert(B.play(s,1,1,2,1))
+  local ws,wr,wi=B.position(s,weak);local fs,fr,fi=B.position(s,five)
+  assert(ws==2 and wr==1 and wi==1 and weak.controller==2 and weak.owner==1,"the weakest friendly Unit crosses over")
+  assert(fs==1 and fr==1 and fi==1 and five.controller==1 and five.owner==2,"the strongest eligible opposing Unit comes back")
+  assert(B.position(s,treant)==2 and B.position(s,giant)==2 and B.position(s,vig)==2,"immovable, high-rank and the agent itself stay")
+  B.damage(s,2,five,99);assert(foe.discard[#foe.discard]==five,"a traded Unit still returns to its owner's discard pile")
+  -- The computer plays every new card to a finish from both seats.
+  for seed=1,12 do
+    local c=cfg();c.factions={seed%2==0 and "Super" or "Water","Super"};L.full(c,1);L.full(c,2)
+    local match=M.new(c,900+seed);local turns=0
+    while not match.state.finished do assert(match:act({type='ai'}));integrity(match,c);turns=turns+1;assert(turns<200) end
+  end
+end)
+test("180 seeded full matches conserve selected copies across every action",function()
+  local rng=U.rng(2026);local played={}
+  for i=1,180 do
+    local c=cfg()
+    for p=1,2 do
+      local f=L.factions[(i+p*math.floor(i/3))%#L.factions+1]
+      c.factions[p]=f;c.decks[p]={};local pool={}
+      for _,card in ipairs(L.collection(f)) do pool[#pool+1]=card.id end
+      while #c.decks[p]<20+(i*p)%(L.size(f)-19) do L.edit(c,p,pool[rng:random(#pool)],1) end
+    end
+    local m=M.new(c,5000+i);local turns=0
+    while not m.state.finished do
+      assert(m:act({type='ai'}));integrity(m,c);turns=turns+1;assert(turns<150)
+      if m.state.last_played then played[m.state.last_played.card.id]=true end
+    end
+    assert(#m.state.round_history>=2 and #m.state.round_history<=3)
+  end
+  print("      distinct cards played across 180 matches: "..U.count(played).." of 166")
+  assert(U.count(played)>150)
+end)
+for _,v in ipairs(cases) do v[2]();print("PASS  "..v[1]) end
+print(#cases.." tabletop tests passed.")

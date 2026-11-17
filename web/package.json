@@ -1,0 +1,11 @@
+{
+  "name": "tide-and-timber-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "python3 build.py"
+  },
+  "dependencies": {
+    "fengari-web": "0.1.4"
+  }
+}

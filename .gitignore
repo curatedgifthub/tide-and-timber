@@ -1,0 +1,12 @@
+/supabase/.publish_secret
+/supabase/.temp/
+/supabase/.branches/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.DS_Store
+__pycache__/
+node_modules/
+/web/dist/

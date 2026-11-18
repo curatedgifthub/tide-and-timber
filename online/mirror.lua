@@ -15,7 +15,7 @@ function Mirror:instance(t,side)
   if not card then error('Unknown card '..tostring(t.c)..'. This copy of the game is out of date.') end
   if not u or u.card~=card then u={uid=t.u,card=card,activated={}};self.cache[t.u]=u end
   u.owner=t.o;u.controller=side or t.o
-  u.spent=t.spent or false;u.hp=t.hp;u.mod=t.mod or 0;u.guard=t.g or 0
+  u.recovered=t.recovered;u.hp=t.hp;u.mod=t.mod or 0;u.guard=t.g or 0
   u.negate_damage=t.nd or false;u.disabled=t.dis or false
   u.activated.chain=t.ch or nil
   return u
@@ -27,7 +27,7 @@ function Mirror:option(v)
   if type(v)~='table' then return v end
   if v.units then
     local units={}
-    for i,id in ipairs(v.units) do units[i]=assert(self.cache[id],'chain refers to an unknown Unit') end
+    for i,id in ipairs(v.units) do units[i]=self.cache[id] or self:instance(v.cards[i]) end
     return {units=units,length=v.length,cross=v.cross or false,direction=v.direction}
   end
   local u=self.cache[v.u] or self:instance(v)
@@ -46,7 +46,7 @@ function Mirror:apply(v)
   for p=1,2 do
     local t,pl=v.players[p],s.players[p]
     pl.name,pl.faction,pl.wins,pl.passed=t.name,t.faction,t.wins,t.passed or false
-    pl.defeats,pl.damage,pl.round_turns=t.defeats or 0,t.damage or 0,t.roundTurns or 0
+    pl.defeats,pl.damage=t.defeats or 0,t.damage or 0
     pl.deck=blanks(t.deck)
     pl.rows={{},{}}
     for r=1,2 do for i,u in ipairs(t.rows[r]) do pl.rows[r][i]=self:instance(u,p) end end

@@ -79,7 +79,7 @@ function View.menu(app)
       P.button("difficulty-"..level,level=="normal" and "Normal" or "Easy",x+112+(i-1)*98,y+299,90,31,
         function() cfg.difficulty=level end,cfg.difficulty==level and "gold" or nil)
     end
-    P.text("Easy picks a legal play or attack.",x+22,y+340,15,P.muted)
+    P.text("Easy picks a legal card play.",x+22,y+340,15,P.muted)
     if not mine then P.button("build","Build your deck   →",x+17,y+377,w-34,49,function() app:builder(1) end,"gold")
     elseif not Lib.computer_ready(cfg) then P.button("build","Finish the computer's deck   →",x+17,y+377,w-34,49,function() app:builder(2) end,"gold")
     else P.button("start","Start online match   →",x+17,y+377,w-34,49,function() app:online("solo") end,ready and "gold" or nil,ready) end
@@ -92,7 +92,7 @@ function View.menu(app)
     end
   end
   P.line(36,689,1245,689,P.rule)
-  local facts={{"MATCH","Best of three"},{"OPENING HAND",Rules.starting_hand.." random cards"},{"DECK",Rules.min_deck_size.."–"..Rules.max_deck_size.." tagged cards"},{"TURN","Play, attack or pass"}}
+  local facts={{"MATCH","Best of three"},{"OPENING HAND",Rules.starting_hand.." random cards"},{"DECK",Rules.min_deck_size.."–"..Rules.max_deck_size.." tagged cards"},{"TURN","Play a card"}}
   for i,v in ipairs(facts) do
     local xx=39+(i-1)*304
     if i>1 then P.line(xx-19,713,xx-19,761,P.rule) end
@@ -156,10 +156,11 @@ function View.builder(app)
   P.plate(spec,x+18,191,w-36,149);P.art(c,x+27,197,w-54,137)
   P.one(c.display_name or c.name,x+18,350,w-36,30,P.textColor,"serif")
   P.text(Text.stats(c),x+18,391,17,P.textColor,"bold")
-  local ability=c.text
+  local hint=require("tabletop.deck_help").describe(c,cfg.decks[p])
+  local ability=c.text..(hint and "\n"..hint or "")
   local top=425
   if c.strength and c.strength>=5 and not c.replaces then
-    P.text("Heavy · Without a base Strength 1–3 ally, deploy at "..math.ceil(c.health/2).."/"..c.health.." HP.",x+18,422,15,P.gold,"sans",w-36)
+    P.text("Heavy · Without a base Strength 1–3 ally, enter at 2 STR and 2/"..c.health.." HP.",x+18,422,15,P.gold,"sans",w-36)
     top=469
   end
   local size=17

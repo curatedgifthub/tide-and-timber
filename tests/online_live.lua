@@ -47,12 +47,6 @@ local function decide(session,rng)
   local legal={}
   for i=1,#s.players[seat].hand do if B.playable(s,seat,i) then legal[#legal+1]=i end end
   if s.extra_turn and rng:random(4)==1 then return {type='end'} end
-  local targets=B.attack_targets(s,seat)
-  if #targets>0 and (#legal==0 or rng:random(3)==1) then
-    for _,u in ipairs(B.units(s,seat)) do
-      if B.ready(s,seat,u) then return {type='attack',attacker=u.uid,target=targets[rng:random(#targets)].uid} end
-    end
-  end
   if #legal==0 or rng:random(14)==1 then return {type='pass'} end
   local i=legal[rng:random(#legal)];local card=s.players[seat].hand[i].card
   if card.type=='Unit' and not card.replaces then

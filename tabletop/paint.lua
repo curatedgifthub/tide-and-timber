@@ -138,7 +138,6 @@ function P.card(card,x,y,w,h,opt)
     if card.bridge and not opt.disabled then tags[#tags+1]="Bridge" end
     if opt.chain then tags[#tags+1]="Chain" end
   end
-  if opt.spent then tags[#tags+1]="Attack used" end
   if opt.fresh then tags[#tags+1]="New draw" end
   local nameHeight=tiny and 14 or 23
   local statHeight=tiny and 14 or 18

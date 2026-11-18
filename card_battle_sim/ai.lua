@@ -102,9 +102,7 @@ function AI.decision(s,p,difficulty)
   if not s.combat and #legal==0 then return {type='pass'} end
   local me=B.score(s,p);local opponent=B.score(s,3-p)
   local theirs=s.players[3-p];local mine=s.players[p]
-  if s.combat then
-    if theirs.passed and B.round_result(s)==p then return {type='pass'} end
-  else
+  if not s.combat then
     if theirs.passed and (me>opponent or me==opponent and #mine.hand<=2) then return {type='pass'} end
     -- Budget the opening hand across the remaining rounds. Hand counts are public.
     local can_concede=s.round<3 and theirs.wins==0
@@ -127,19 +125,6 @@ function AI.decision(s,p,difficulty)
       end
     else moves[#moves+1]={type='play',index=index,value=evaluate(s,p,index,1,1)} end
   end
-  if s.combat then
-    for _,u in ipairs(B.units(s,p)) do if B.ready(s,p,u) then
-      for _,target in ipairs(B.attack_targets(s,p)) do
-        local damage=math.max(0,B.attack_power(s,u,target)-(target.guard or 0))
-        if target.negate_damage then damage=0 end
-        local lethal=damage>=target.hp
-        local value=3+math.min(damage,target.hp)+(lethal and 10 or 0)
-        if not lethal and #theirs.rows[1]>0 then value=value-math.floor(B.strength(s,target)/2)*0.75 end
-        if not target.spent then value=value+math.min(6,B.strength(s,target))*.3 end
-        moves[#moves+1]={type='attack',attacker=u.uid,target=target.uid,value=value}
-      end
-    end end
-  end
   if #moves==0 then return {type='pass'} end
   local best=moves[1]
   for _,move in ipairs(moves) do
@@ -147,12 +132,6 @@ function AI.decision(s,p,difficulty)
   end
   if difficulty=='easy' and (not s.combat or s.rng:random(3)~=1) then
     local random=moves[s.rng:random(#moves)]
-    -- Count legal attacks independently of the number of deployment slots.
-    if s.combat and s.rng:random(2)==1 then
-      local attacks={}
-      for _,move in ipairs(moves) do if move.type=='attack' then attacks[#attacks+1]=move end end
-      if #attacks>0 then random=attacks[s.rng:random(#attacks)] end
-    end
     best=random
   end
   -- Pass when the likely value of playing a card would not justify spending it.
@@ -162,7 +141,6 @@ end
 function AI.step(s,p,difficulty)
   if s.active~=p or s.finished then return false,'Not active' end
   local move=AI.decision(s,p,difficulty)
-  if move.type=='attack' then return B.attack(s,p,move.attacker,move.target) end
   if move.type=='pass' then return B.pass(s,p) end
   if move.type=='school' then return B.school(s,p) end
   return B.play(s,p,move.index,move.row,move.pos)

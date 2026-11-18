@@ -7,9 +7,12 @@ local Placement = require('tabletop.placement')
 
 return function(receiver, payload)
   local view = assert(json.decode(payload or receiver))
+  if view.guideCard then
+    return require("tabletop.deck_help").describe(require("data.cards").by_id[view.guideCard],view.deck) or ""
+  end
   local state = Mirror.new():apply(view)
   local seat = view.seat
-  local info = {attacks=json.object({}),scores={}, units=json.object({}), hand={}, school=Battle.can_school(state,seat)}
+  local info = {attackPreview=json.object({}),scores={}, units=json.object({}), hand={}, school=Battle.can_school(state,seat)}
   for p, player in ipairs(state.players) do
     info.scores[p] = Battle.score(state,p)
     for r, row in ipairs(player.rows) do
@@ -25,13 +28,14 @@ return function(receiver, payload)
       end
     end
   end
-  for _, attacker in ipairs(Battle.units(state,seat)) do
-    if Battle.ready(state,seat,attacker) then
-      local choices={}
+  local prompt=view.prompt
+  if prompt and prompt.context and prompt.context.op=='deploy_attack' then
+    local source
+    for _,u in ipairs(Battle.units(state,seat)) do if u.uid==prompt.context.unit.u then source=u end end
+    if source then
       for _,target in ipairs(Battle.attack_targets(state,seat)) do
-        choices[#choices+1]={target=target.uid,power=Battle.attack_power(state,attacker,target)}
+        info.attackPreview[tostring(target.uid)]=Battle.attack_power(state,source,target)
       end
-      if #choices>0 then info.attacks[tostring(attacker.uid)]=choices end
     end
   end
   for i, unit in ipairs(state.players[seat].hand) do

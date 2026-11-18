@@ -34,11 +34,11 @@ function Match:act(action)
   local s,p=self.state,self.state.active
   self.task=coroutine.create(function()
     if action.type=="ai" then return AI.step(s,p) end
-    if action.type=="attack" then return B.attack(s,p,action.attacker,action.target) end
     if action.type=="pass" then return B.pass(s,p) end
     if action.type=="end" then return B.end_extra(s,p) end
     if action.type=="school" then return B.school(s,p) end
-    return B.play(s,p,action.index,action.row,action.pos)
+    if action.type=="play" then return B.play(s,p,action.index,action.row,action.pos) end
+    return false,"Unknown action"
   end)
   return self:resume()
 end

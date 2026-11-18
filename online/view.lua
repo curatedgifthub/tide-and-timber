@@ -3,10 +3,10 @@
 -- Private to a seat: the cards in its own hand, the cards an ability lets it examine, and
 -- the names of the cards it draws. Nobody receives draw-deck contents or order, or the seed.
 local View={}
-local function card(u) return {u=u.uid,c=u.card.id,o=u.owner} end
+local function card(u) return {u=u.uid,c=u.card.id,o=u.owner,recovered=u.recovered or nil} end
 local function unit(u)
   local t=card(u)
-  t.hp=u.hp;t.spent=u.spent or nil
+  t.hp=u.hp
   if u.mod and u.mod~=0 then t.mod=u.mod end
   if (u.guard or 0)>0 then t.g=u.guard end
   if u.negate_damage then t.nd=true end
@@ -15,9 +15,9 @@ local function unit(u)
   return t
 end
 local function chain(ch)
-  local ids={}
-  for i,u in ipairs(ch.units) do ids[i]=u.uid end
-  return {units=ids,length=ch.length,cross=ch.cross or nil,direction=ch.direction}
+  local ids,cards={},{}
+  for i,u in ipairs(ch.units) do ids[i]=u.uid;cards[i]=card(u) end
+  return {units=ids,cards=cards,length=ch.length,cross=ch.cross or nil,direction=ch.direction}
 end
 local function option(v)
   if type(v)~='table' then return v end
@@ -50,7 +50,7 @@ function View.build(s,seat,extra)
   for p=1,2 do
     local pl=s.players[p]
     local t={name=pl.name,faction=pl.faction,wins=pl.wins,passed=pl.passed or nil,
-      defeats=pl.defeats,damage=pl.damage,roundTurns=pl.round_turns,deck=#pl.deck,hand=#pl.hand,discard={},rows={{},{}}}
+      defeats=pl.defeats,damage=pl.damage,deck=#pl.deck,hand=#pl.hand,discard={},rows={{},{}}}
     if p==seat then
       t.cards={}
       for i,c in ipairs(pl.hand) do t.cards[i]=card(c) end

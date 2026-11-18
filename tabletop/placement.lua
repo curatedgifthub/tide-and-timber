@@ -2,12 +2,12 @@ local Chains=require('chains')
 local Placement={}
 
 Placement.guide={
-  {title="Deploy, attack or pass",detail="Each side has up to eight turns per round. On your turn play a card or make one basic attack. Passing gives up your remaining turns."},
-  {title="Front protects Back",detail="Both rows can attack once per unit per round for current Strength. Target Front first. A surviving Front defender counters for half its Strength, rounded down. Back defenders do not counter."},
-  {title="Deploy heavy units with support",detail="Units with base Strength 5 or higher enter at half Health, rounded up, unless you have an ally of base Strength 1–3 on the field. Summons and replacements enter at full Health."},
-  {title="Use abilities for extra damage and protection",detail="Card abilities follow their own target rules. They can reach behind Front. Guard absorbs damage, healing restores Health, and zero Health defeats the unit. Abilities can grant up to two extra card plays per turn."},
-  {title="Win the fight",detail="When both sides finish, more enemy units defeated wins. Break ties by enemy Health removed, then by being the only side with units. Otherwise draw. An empty row or battlefield never ends a round early."},
-  {title="Chains add one damage",detail="A Tide or Timber unit in a chain gains +1 basic attack damage. Multiple chains give the bonus only once. Comic cards use named combinations."},
+  {title="Place, strike, resolve",detail="Playing a unit from hand places it and attacks an enemy in the same play. Its Deploy ability resolves next, then any eligible chain abilities. Summons resolve their own abilities. Double Agents infiltrate instead of striking."},
+  {title="Front shields Back",detail="A basic attack must hit Front while it is occupied. A surviving defender counters for half its current Strength, rounded down. Special attacks use their own targets."},
+  {title="Support from Back",detail="The rightmost other Back ally adds 1 attack damage per 3 current Strength, up to 2. Each member of a numerical chain also gains +1 deployment attack damage, counted once."},
+  {title="Deploy heavy units with support",detail="Units of base Strength 5 or more enter at 2 Strength and 2 HP without a friendly base Strength 1–3 unit. Summons and replacements enter at full Strength and Health before their abilities."},
+  {title="Reinforcements and recovery",detail="Draw one on subsequent turns. If you cannot play, wait for a draw or for the board to change. Each physical card can be recovered from discard once per round."},
+  {title="Win a round",detail="Defeat an opponent who has no fielded units, no draw deck and no legal play. If neither can play or draw, more surviving units wins, with equal forces drawing. Conceding awards the round immediately. Each new round redeals the selected decks."},
   {title="Put a Bridge at either right end",detail="Follow your Front row to the right, cross to the last Back card, then read Back to the left."},
   {title="Connect at least three units by base Strength",detail="Step up by one each time, or down by one. Matching Chain abilities can then trigger."},
   {title="Try Minnow (1) then Seahorse (2) in Front",detail="Place a unit with base Strength 3 at the right end of Back. Seahorse bridges 1 → 2 → 3 and Minnow draws."},

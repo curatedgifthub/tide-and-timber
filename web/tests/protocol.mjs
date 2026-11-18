@@ -7,6 +7,7 @@ import {join} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {Api} from '../src/api.js'
 import {Match} from '../src/session.js'
+import {board,choices} from '../src/board.js'
 import {cardFace,inspect} from '../src/ui.js'
 
 const catalog = JSON.parse(readFileSync(new URL('../dist/catalog.json', import.meta.url)))
@@ -69,6 +70,26 @@ try {
   for (const seat of [host,guest]) {
     assert.equal(seat.view.players[seat.view.seat-1].cards.length,5)
     assert.equal(seat.view.players[seat.view.seat-1].deck,seat===host?25:15)
+  }
+  // Render both real seat-view shapes in Node, with a wound on each battlefield.
+  for (const seat of [host,guest]) {
+    const view=structuredClone(seat.view)
+    const metrics={scores:[1,1],units:{},hand:[],attackPreview:{}}
+    for (const [i,p] of view.players.entries()) {
+      const c=catalog.factions[i].starter.map(id=>catalog.cards[id]).find(c=>c.health>3)
+      const u={u:100+i,c:c.id,hp:c.health-i-1}
+      p.rows[i]=[u]
+      metrics.units[u.u]={seat:i+1,row:i+1,pos:1,strength:c.strength}
+    }
+    const html=board({view,ready:true,active:true,log:[]},catalog,metrics,null)
+    const opts=view.players.map(p=>p.rows.flat()[0])
+    view.prompt={kind:'unit',context:{op:'heal'},options:opts}
+    const prompt=choices(view,catalog,metrics).body
+    for (const u of opts) {
+      const hp=u.hp+'/'+catalog.cards[u.c].health+' HP'
+      assert.ok(html.includes(hp) && prompt.includes(hp),'battlefield and choice show wounded HP')
+    }
+    assert.doesNotMatch(html,/Attack with a unit|ready unit/i)
   }
   const actor=host.ready?host:guest, other=actor===host?guest:host
   const token=actor.api.read('auth')

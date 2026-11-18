@@ -7,6 +7,10 @@ local Rules = require('rules')
 local U = require('util')
 local B = {}
 
+-- Optional simulation observations. Only actual resource changes are counted.
+local function measure(s,u,event,n)
+  if s.observe and u and n~=0 then s.observe(u.card.id,event,n or 1) end
+end
 local function other(p) return 3-p end
 local function emit(s,msg)
   if #s.log<30000 then s.log[#s.log+1]=msg end
@@ -68,23 +72,23 @@ local function base_strength(s,u)
   local v=u.card.strength+(u.mod or 0)
   if not u.disabled then
     local id=u.card.id
-    local adj=adjacent(s,u)
     if id=='Water:4' then
-      for _,a in ipairs(adj) do if a.card.fish and a.card.strength<=2 then v=v+1;break end end
+      for _,a in ipairs(adjacent(s,u)) do if a.card.fish and a.card.strength<=2 then v=v+1;break end end
     elseif id=='Water:15' then
-      for _,a in ipairs(adj) do if a.card.strength==2 then v=v+1;break end end
+      for _,a in ipairs(adjacent(s,u)) do if a.card.strength==2 then v=v+1;break end end
     elseif id=='Water:51' then
       local count=0
       for _,a in ipairs(all_units(s,u.controller)) do if a~=u and a.card.strength<=2 then count=count+1 end end
       v=v+math.min(2,count)
     elseif id=='Fantasy:9' then
-      for _,a in ipairs(adj) do if a.card.name=='Goblin Sneak' then v=v+1;break end end
+      for _,a in ipairs(adjacent(s,u)) do if a.card.name=='Goblin Sneak' then v=v+1;break end end
     elseif id=='Fantasy:44' then
-      for _,a in ipairs(adj) do if a.card.name=='Stone Troll' or a.card.name=='Trollkin Brawler' then v=v+2;break end end
+      for _,a in ipairs(adjacent(s,u)) do if a.card.name=='Stone Troll' or a.card.name=='Trollkin Brawler' then v=v+2;break end end
 
     end
   end
-  -- Continuous support auras depend on active sources.
+  -- Only Orcs receive the two continuous Orc support auras.
+  if not u.card.name:find("Orc",1,true) or immune_area(u) then return v end
   for _,source in ipairs(all_units(s,u.controller)) do
     if source~=u and not source.disabled and not immune_area(u) then
       local id=source.card.id
@@ -127,7 +131,7 @@ local function score_current(s,u)
 end
 B.strength=score_current
 function B.score(s,p)
-  if s.combat then return s.players[p].defeats end
+  if s.combat then return #s.players[p].rows[1]+#s.players[p].rows[2] end
   local result=0
   for _,u in ipairs(all_units(s,p)) do result=result+score_current(s,u) end
   return result
@@ -143,8 +147,12 @@ function B.choose(s,actor,kind,options,context)
     if index==0 and context and context.optional then return nil end
     if type(index)=='number' and index>=1 and index<=#options and index%1==0 then return options[index] end
   end
+  if kind=='row' and context and (context.enemy or context.op=='maelstrom') then
+    local rows=s.players[other(actor)].rows
+    return #rows[2]>#rows[1] and 2 or 1
+  end
   if kind=='unit' then
-    if context and (context.op=='damage' or context.op=='destroy') then
+    if context and (context.op=='damage' or context.op=='deploy_attack' or context.op=='destroy') then
       local best=options[1]
       for _,u in ipairs(options) do if u.hp<=best.hp then best=u end end
       return best
@@ -217,6 +225,8 @@ local function draw(s,p,n,source,turn_draw)
     pl.hand[#pl.hand+1]=card
     cards[#cards+1]=card
   end
+  measure(s,source,"drawn",#cards)
+  if #cards==0 then measure(s,source,'empty_draws') end
   s.stats.drawn[p]=s.stats.drawn[p]+#cards
   local reason
   if #cards<n then reason=#pl.deck==0 and 'draw deck empty' or 'hand full' end
@@ -240,9 +250,11 @@ local function recover(s,p,n,predicate,optional)
   for i=1,n do
     if #s.players[p].hand>=s.max_hand then break end
     local pile=s.players[p].discard
-    local card=choose_card(s,p,'card',pile,predicate,optional)
+    local card=choose_card(s,p,'card',pile,function(c)
+      return not c.recovered and (not predicate or predicate(c))
+    end,optional)
     if not card then break end
-    U.remove(pile,card);card.controller=p
+    U.remove(pile,card);card.recovered=s.combat or nil;card.controller=p
     s.players[p].hand[#s.players[p].hand+1]=card;count=count+1
     emit(s,s.players[p].name..' recovers '..card.card.name..'.')
   end
@@ -285,10 +297,10 @@ local function damage(s,actor,u,amount,flags)
   if not is_deployed(s,u) then return false end
   if amount<=0 then return false end
   flags=flags or {}
-  if flags.area and immune_area(u) then return false end
+  if flags.area and immune_area(u) then measure(s,u,'prevented',math.min(amount,u.hp));return false end
   local prevented=0
   if not flags.piercing then
-    if u.negate_damage and actor~=u.controller then u.negate_damage=false;emit(s,location(u)..' avoids the opposing damage effect.');return false end
+    if u.negate_damage and actor~=u.controller then u.negate_damage=false;measure(s,u,'prevented',math.min(amount,u.hp));emit(s,location(u)..' avoids the opposing damage effect.');return false end
     if u.card.id=='Water:17' and not u.disabled and not u.shell_used then
       prevented=math.min(amount,2);u.shell_used=true
     end
@@ -296,11 +308,14 @@ local function damage(s,actor,u,amount,flags)
       local n=math.min(amount-prevented,u.guard); prevented=prevented+n;u.guard=u.guard-n
     end
   end
+  measure(s,u,'prevented',math.min(amount,u.hp)-math.min(amount-prevented,u.hp))
   local controller=u.controller
   local spines=u.card.id=='Water:23' and not u.disabled and actor~=controller
   local dealt=math.max(0,amount-prevented)
   if dealt>0 then
     local before=u.hp;u.hp=math.max(0,u.hp-dealt)
+    measure(s,flags.source,flags.kind or 'special_damage',before-u.hp)
+    if flags.source and flags.kind==nil and actor==controller then measure(s,flags.source,'friendly_damage',before-u.hp) end
     if s.combat and actor~=controller then
       local pl=s.players[actor];pl.damage=pl.damage+before-u.hp
     end
@@ -312,7 +327,7 @@ local function damage(s,actor,u,amount,flags)
     end
     if spines then
       local t=pick_unit(s,controller,all_units(s,actor),{op='damage'})
-      if t then damage(s,controller,t,1,{}) end
+      if t then damage(s,controller,t,1,{source=u}) end
     end
   elseif prevented>0 then emit(s,location(u)..' prevents '..prevented..' damage.') end
   return dealt>0
@@ -341,7 +356,7 @@ local function move_unit(s,actor,u,dest_row,dest_pos)
   return true
 end
 -- The top of a draw deck is its last element; from_bottom examines deck[1], deck[2], ...
-local function search_deck(s,actor,n,filter,full,from_bottom)
+local function search_deck(s,actor,n,filter,full,from_bottom,source)
   local pl=s.players[actor];local peek={}
   local count=math.min(n,#pl.deck)
   for i=1,count do peek[#peek+1]=from_bottom and pl.deck[i] or pl.deck[#pl.deck-i+1] end
@@ -355,6 +370,7 @@ local function search_deck(s,actor,n,filter,full,from_bottom)
   if #pl.hand<s.max_hand then chosen=B.choose(s,actor,'card',eligible,{op='search',cards=peek,bottom=from_bottom}) end
   local where=from_bottom and 'the bottom of the draw deck' or 'the draw deck'
   if chosen then
+    measure(s,source,'searched')
     U.remove(pl.deck,chosen);chosen.controller=actor;pl.hand[#pl.hand+1]=chosen
     emit(s,pl.name..' searches '..where..' and takes a card.')
   elseif count==0 then emit(s,pl.name..' searches '..where..', but it is empty.')
@@ -371,6 +387,12 @@ local function search_deck(s,actor,n,filter,full,from_bottom)
 end
 local function play_extra(s,actor,n)
   if s.combat then
+    if actor~=s.active then
+      local pl=s.players[actor]
+      pl.bonus_next=math.min(2,(pl.bonus_next or 0)+n)
+      emit(s,pl.name..' earns a bonus card play for their next turn.')
+      return
+    end
     local granted=s.extra_granted or 0
     n=math.min(n,2-granted)
     if n==0 then return end
@@ -393,7 +415,6 @@ end
 -- Puts a Unit that did not come from a normal card play onto the battlefield.
 -- A Double Agent always lands on the battlefield opposite the player who deploys it.
 local function prepare_unit(s,c,side)
-  c.spent=c.last_attack_round==s.round
   c.hp=c.card.health;c.mod=0;c.guard=0;c.negate_damage=false;c.activated={}
   c.disabled=false;c.shell_used=false;c.fed=false;c.controller=side
   if c.card.agent then c.owner=side end
@@ -419,6 +440,7 @@ end
 function B.resolve(s,actor,source,operations,context)
   context=context or {};local last_target=nil
   if operations and #operations>0 and source and source.card then
+    measure(s,source,'resolutions')
     local id=source.card.id
     s.stats.abilities[id]=(s.stats.abilities[id] or 0)+1
   end
@@ -429,8 +451,12 @@ function B.resolve(s,actor,source,operations,context)
     end
     local name=op.op;local amount=op.n or 0
     local allowed=true
-    if op.requires=='frontrow' then local _,r=B.position(s,source);allowed=r==1 end
-    if op.requires=='backrow' then local _,r=B.position(s,source);allowed=r==2 end
+    measure(s,source,'operations')
+    if op.requires=='no_wounds' then
+      for _,u in ipairs(all_units(s,actor)) do if u.hp<u.card.health then allowed=false;break end end
+    end
+    if op.requires=='frontrow' then local _,r=B.position(s,source);allowed=(r or context.entry_row)==1 end
+    if op.requires=='backrow' then local _,r=B.position(s,source);allowed=(r or context.entry_row)==2 end
     if op.requires=='back_ally' then
       allowed=false
       for _,u in ipairs(s.players[actor].rows[2]) do if u~=source then allowed=true;break end end
@@ -451,6 +477,7 @@ function B.resolve(s,actor,source,operations,context)
     if op.requires=='chain4' then allowed=#Chains.find(s.players[actor])>0
       if allowed then allowed=false;for _,ch in ipairs(Chains.find(s.players[actor])) do if ch.length>=4 then allowed=true end end end
     end
+    if op.requires=='long_chain' then allowed=context.chain and context.chain.length>=5 end
     if op.requires=='cross_chain' then allowed=context.chain and context.chain.cross or false end
     if op.requires=='behind' then
       -- Last Stand is stronger only if the caster is behind BEFORE it resolves.
@@ -473,6 +500,9 @@ function B.resolve(s,actor,source,operations,context)
       amount=math.min(op.other_friends,count)
     end
     if allowed then
+      measure(s,source,'conditions_met')
+      if op.if_ally and op.if_ally=='Super:75' and name=='damage' then measure(s,source,'named_bonus') end
+      if op.if_ally and op.if_ally=='Super:74' and op.target=='self' then measure(s,source,'named_bonus') end
       if name=='draw' then draw(s,actor,amount,source)
       elseif name=='buff' or name=='debuff' or name=='damage' or name=='heal' or name=='guard' then
         local which=op.target
@@ -484,8 +514,15 @@ function B.resolve(s,actor,source,operations,context)
           end
           local chosen=B.choose(s,actor,'chain',eligible,{op='chain'})
           choices=chosen and chosen.units or {}
+        elseif which=='chain' and context.chain then choices=context.chain.units
         elseif which=='last_target' then choices=last_target and {last_target} or {}
         else choices=targets(s,actor,source,which,op) end
+        if name=='heal' then
+          local wounded={}
+          for _,u in ipairs(choices) do if u.hp and u.hp<u.card.health then wounded[#wounded+1]=u end end
+          choices=wounded
+          if #choices==0 then measure(s,source,'empty_heals') end
+        end
         local area=which=='friends' or which=='enemies' or which=='enemy_row' or which=='friend_row' or which=='other_friendly_row' or which=='chain'
         local multi=area or which=='two_friends' or which=='two_debuffed_friends'
         local selected={}
@@ -498,11 +535,11 @@ function B.resolve(s,actor,source,operations,context)
           else selected=choices end
         else
           local filtered={}
-          for _,u in ipairs(choices) do if (not op.min_printed or u.card.strength>=op.min_printed) then filtered[#filtered+1]=u end end
+          for _,u in ipairs(choices) do if is_deployed(s,u) and (not op.min_printed or u.card.strength>=op.min_printed) then filtered[#filtered+1]=u end end
           local t=pick_unit(s,actor,filtered,{op=name})
           if t then selected={t} end
         end
-        if #selected==0 and not multi then emit(s,'No eligible Unit for '..name..'.') end
+        if #selected==0 and not multi and name~='heal' then emit(s,'No eligible Unit for '..name..'.') end
         for _,u in ipairs(selected) do
           if is_deployed(s,u) then
             if name=='buff' then buff(s,actor,u,amount,area)
@@ -510,12 +547,12 @@ function B.resolve(s,actor,source,operations,context)
             elseif name=='damage' then
               local hit=amount
               if op.wounded_bonus and u.hp<u.card.health then hit=hit+op.wounded_bonus end
-              if op.back_bonus and select(2,B.position(s,source))==2 then hit=hit+op.back_bonus end
+              if op.back_bonus and (select(2,B.position(s,source)) or context.entry_row)==2 then hit=hit+op.back_bonus end
               if op.crowded_bonus then
                 local side,row=B.position(s,u)
                 if (area and #selected or #s.players[side].rows[row])>=(op.crowd_size or 2) then hit=hit+op.crowded_bonus end
               end
-              damage(s,actor,u,hit,{area=area,piercing=op.piercing})
+              damage(s,actor,u,hit,{area=area,piercing=op.piercing,source=source})
             elseif name=='heal' then
               if not area or not immune_area(u) then
                 local before=u.hp
@@ -526,7 +563,8 @@ function B.resolve(s,actor,source,operations,context)
                   hp=B.choose(s,actor,'amount',values,{op='heal',unit=u})
                 end
                 u.hp=math.min(u.card.health,u.hp+hp)
-                emit(s,location(u)..' heals '..(u.hp-before)..' HP ('..before..' -> '..u.hp..').')
+                measure(s,source,'healed',u.hp-before)
+                if u.hp>before then emit(s,location(u)..' heals '..(u.hp-before)..' HP ('..before..' -> '..u.hp..').') end
               end
             elseif name=='guard' then
               if not area or not immune_area(u) then
@@ -539,8 +577,12 @@ function B.resolve(s,actor,source,operations,context)
         end
         if op.draw_if_printed_le and last_target and last_target.card.strength<=op.draw_if_printed_le then draw(s,actor,1,source) end
         if op.draw_if_destroyed and last_target and not is_deployed(s,last_target) then draw(s,actor,op.draw_if_destroyed,source) end
-      elseif name=='search' then search_deck(s,actor,amount,op.target,op.shuffle or amount>=9999,op.from_bottom)
-      elseif name=='recover' then recover(s,actor,amount,function(c)return op_predicate(c,op.target,op)end,op.optional)
+      elseif name=='search' then search_deck(s,actor,amount,op.target,op.shuffle or amount>=9999,op.from_bottom,source)
+      elseif name=='recover' then
+        local n=recover(s,actor,amount,function(c)return op_predicate(c,op.target,op)end,op.optional)
+        measure(s,source,'recovered',n)
+        if n==0 then measure(s,source,'empty_recoveries') end
+        if n==0 and op.fallback_draw then draw(s,actor,1,source) end
       elseif name=='move' then
         local kind=op.n;local tkind=op.target
         if kind=='swap' then
@@ -647,7 +689,7 @@ function B.resolve(s,actor,source,operations,context)
       elseif name=='destroy' then
         local options={};for _,u in ipairs(all_units(s,other(actor))) do if u.hp<=op.max_health and (not op.wounded or u.hp<u.card.health) then options[#options+1]=u end end
         local t=pick_unit(s,actor,options,{op='destroy'})
-        if t then kill(s,t,actor,'destroy') end
+        if t then measure(s,source,'executions');kill(s,t,actor,'destroy') end
       elseif name=='maelstrom' then
         local row=B.choose(s,actor,'row',{1,2},{op='maelstrom'}) or 1
         local rev={};for _,u in ipairs(s.players[other(actor)].rows[row]) do rev[#rev+1]=u end
@@ -669,9 +711,9 @@ function B.resolve(s,actor,source,operations,context)
       elseif name=='resurrect' then
         for j=1,op.count do
           local pile=s.players[actor].discard
-          local c=choose_card(s,actor,'card',pile,function(v)return op_predicate(v,op.filter,op) end,true)
+          local c=choose_card(s,actor,'card',pile,function(v)return not v.recovered and op_predicate(v,op.filter,op) end,true)
           if not c then break end
-          U.remove(pile,c)
+          U.remove(pile,c);c.recovered=s.combat or nil;measure(s,source,'recovered')
           enter(s,actor,c,'resurrect','resurrects into')
         end
       elseif name=='team' then
@@ -689,8 +731,9 @@ function B.resolve(s,actor,source,operations,context)
         if #s.players[actor].hand<s.max_hand and #pool>0 then
           local c
           if op.random or name=='steal_draw' then c=pool[name=='steal_draw' and #pool or s.rng:random(#pool)]
-          else c=choose_card(s,actor,'card',pool) end
+          else c=choose_card(s,actor,'card',pool,function(v)return name~='steal_discard' or not v.recovered end) end
           if c then U.remove(pool,c);c.controller=actor
+            if name=='steal_discard' then c.recovered=s.combat or nil;measure(s,source,'recovered') end
             s.players[actor].hand[#s.players[actor].hand+1]=c
             emit(s,s.players[actor].name..' takes a card from the opposing '..(name=='steal_draw' and 'draw deck' or name=='steal_hand' and 'hand' or 'discard pile')..'.') end
         end
@@ -713,21 +756,26 @@ function B.resolve(s,actor,source,operations,context)
         local arrived={}
         for _,id in ipairs(op.characters) do
           local piles={pl.deck,pl.hand}
-          if C.by_id[id].repel then piles[3]=pl.discard end
           local unit=take_named(piles,id)
+          if not unit and C.by_id[id].repel then
+            for i,c in ipairs(pl.discard) do if c.card.id==id and not c.recovered then
+              unit=table.remove(pl.discard,i);unit.recovered=s.combat or nil;measure(s,source,'recovered');break
+            end end
+          end
           if unit then
             prepare_unit(s,unit,actor)
             table.insert(pl.rows[1],unit)
             arrived[#arrived+1]=unit.card.name
           end
         end
-        if #arrived>0 then emit(s,'Building Showdown summons '..table.concat(arrived,', ')..' into Front.')
+        measure(s,source,'named_summons',#arrived)
+        if #arrived>0 then measure(s,source,'summon_plays');emit(s,'Building Showdown summons '..table.concat(arrived,', ')..' into Front.')
         else emit(s,'Building Showdown finds no available characters.') end
       elseif name=='summon' then
         if source.card.id==op.caller and B.position(s,source)==actor and has_unit(s,actor,op.partner) then
           local pl=s.players[actor]
           local found=take_named({pl.deck,pl.hand},op.id)
-          if found then enter(s,actor,found,'summon','charges into')
+          if found then measure(s,source,'summon_plays');measure(s,source,'named_summons');enter(s,actor,found,'summon','charges into')
           else emit(s,location(source)..' finds no '..C.by_id[op.id].name..' in the draw deck or hand.') end
         end
       elseif name=='fetch' then
@@ -735,6 +783,7 @@ function B.resolve(s,actor,source,operations,context)
         for _,c in ipairs(pl.deck) do if c.card.id==op.id then found=c;break end end
         if found and #pl.hand<s.max_hand then
           local before=#pl.deck
+          measure(s,source,'searched')
           U.remove(pl.deck,found);found.controller=actor;pl.hand[#pl.hand+1]=found
           s.stats.drawn[actor]=s.stats.drawn[actor]+1
           emit(s,string.format('%s takes %s from the draw deck (draw deck %d → %d).',location(source),found.card.name,before,#pl.deck))
@@ -759,6 +808,16 @@ function B.resolve(s,actor,source,operations,context)
         else emit(s,'No pair of Units to trade.') end
       elseif A.handlers[name] then A.handlers[name](s,actor,source,op,context)
       else error('Unknown ability operation: '..tostring(name)) end
+    end
+  end
+end
+local function collect_triggers(s,p,pending)
+  local seen={}
+  for _,entry in ipairs(pending) do seen[entry.unit]=true end
+  for _,u in ipairs(all_units(s,p)) do
+    if u.card.chain and not u.activated.chain and not seen[u] then
+      local ch=Chains.qualify(s.players[p],u,u.card.chain,false)
+      if ch then pending[#pending+1]={unit=u,chain=ch} end
     end
   end
 end
@@ -798,22 +857,19 @@ local function record_chains(s)
     end
   end
 end
-function B.check_chains(s)
+function B.check_chains(s,earned)
+  earned=earned or {{},{}}
   record_chains(s)
   -- Re-evaluate both sides after every resolution. An opposing death can
   -- close a gap and create a new chain for the original active player.
   while true do
     local resolved=false
     for _,p in ipairs({s.active,other(s.active)}) do
-      local pending={}
-      for _,u in ipairs(all_units(s,p)) do
-        if u.card.chain and not u.activated.chain then
-          local ch=Chains.qualify(s.players[p],u,u.card.chain,false)
-          if ch then pending[#pending+1]={unit=u,chain=ch} end
-        end
-      end
+      local pending=earned[p]
+      collect_triggers(s,p,pending)
       if #pending>0 then
         local selected=B.choose(s,p,'chain_activation',pending,{op='chain_activation'})
+        U.remove(pending,selected)
         local u,ch=selected.unit,selected.chain
         local effects=A.get(u.card,'chain')
         for _,op in ipairs(effects or {}) do
@@ -822,6 +878,7 @@ function B.check_chains(s)
             break
           end
         end
+        measure(s,u,'chain_triggers')
         u.activated.chain=true
         s.stats.chain_activated[p]=s.stats.chain_activated[p]+1
         s.stats.chain_sizes[ch.length]=(s.stats.chain_sizes[ch.length] or 0)+1
@@ -840,10 +897,10 @@ function B.check_chains(s)
 end
 local auto_pass
 local function init_player(index,name,faction,deck,s)
-  local p={name=name,faction=faction,deck={},hand={},discard={},rows={{},{}},passed=false,wins=0,defeats=0,damage=0,round_turns=0}
+  local p={name=name,faction=faction,deck={},hand={},discard={},rows={{},{}},passed=false,wins=0,defeats=0,damage=0}
   for _,id in ipairs(deck) do
     s.next_id=s.next_id+1
-    p.deck[#p.deck+1]={uid=s.next_id,card=C.by_id[id],owner=index,controller=index,mod=0,activated={}}
+    p.deck[#p.deck+1]={uid=s.next_id,card=C.by_id[id],home=index,owner=index,controller=index,mod=0,activated={}}
   end
   s.rng:shuffle(p.deck)
   return p
@@ -862,7 +919,7 @@ function B.new(deck1,deck2,opts)
   local s={rng=U.rng(opts.seed or os.time()),next_id=0,players={},log={},round=1,max_hand=max_hand,on_draw=opts.on_draw,
     combat=not opts.deck_size,turn_draw=not opts.deck_size,round_history={},active=1,turns=0,steps=0,plays_left=1,finished=false,winner=nil,
     chooser=opts.chooser,on_event=opts.on_event,school_used={[1]=false,[2]=false},
-    activation_count=0,
+    activation_count=0,observe=opts.observe,
     stats={played={0,0},drawn={0,0},discarded={0,0},chain_activated={0,0},chain_sizes={},
       chains_completed={0,0},chain_completions_by_length={},abilities={}}}
   local names=opts.names or {'Player','Opponent'}
@@ -895,8 +952,7 @@ function B.can_school(s,p)
   for _,c in ipairs(s.players[p].hand) do if c.card.id~='Water:31' then return false end end
   return true
 end
-function B.playable(s,p,index)
-  if s.finished or s.active~=p or s.players[p].passed or s.plays_left<=0 then return false,'Not your turn' end
+local function eligible_card(s,p,index)
   local card=s.players[p].hand[index];if not card then return false,'Invalid hand index' end
   for _,id in ipairs(card.card.requires_units or {}) do
     if not has_unit(s,p,id) then return false,'Requires '..C.by_id[id].name..' on your battlefield' end
@@ -919,13 +975,13 @@ function B.playable(s,p,index)
       local count=0
       for _,u in ipairs(candidates) do
         local side,r=B.position(s,u)
-        if (not op.min_printed or u.card.strength>=op.min_printed)
+        if (not op.min_printed or u.card.strength>=op.min_printed) and (op.op~='heal' or u.hp<u.card.health)
           and (op.op~='move' or not immune_move(u,p) and (op.n~='same' or #s.players[side].rows[r]>1)) then count=count+1 end
       end
       if not op.optional and count<(target=='two_friends' and 2 or 1) then return false,'Needs an eligible '..(target=='enemy' and 'opposing' or 'friendly')..' Unit target' end
     elseif op and op.op=='recover' and op.n==1 then
       local found=false
-      for _,u in ipairs(s.players[p].discard) do if op_predicate(u,op.target,op) then found=true end end
+      for _,u in ipairs(s.players[p].discard) do if not u.recovered and op_predicate(u,op.target,op) then found=true end end
       if not found then return false,'Needs an eligible card in your discard pile' end
     elseif op and op.op=='bottom_from_hand' and #s.players[p].hand<2 then
       return false,'Needs another card in hand'
@@ -935,17 +991,30 @@ function B.playable(s,p,index)
   end
   return true
 end
+function B.playable(s,p,index)
+  if s.finished or s.active~=p or s.players[p].passed or s.plays_left<=0 then return false,'Not your turn' end
+  return eligible_card(s,p,index)
+end
+local function can_reinforce(s,p)
+  if #s.players[p].deck>0 then return true end
+  for i=1,#s.players[p].hand do if eligible_card(s,p,i) then return true end end
+  return false
+end
 -- Only the exposed enemy row can be targeted by a basic attack.
 function B.attack_targets(s,p)
   local rows=s.players[other(p)].rows
   return #rows[1]>0 and rows[1] or rows[2]
 end
-function B.ready(s,p,u)
-  return s.combat and not s.finished and s.active==p and not s.extra_turn and
-    not s.players[p].passed and u.controller==p and u.hp~=nil and not u.spent
+function B.support(s,u)
+  local back=s.players[u.controller].rows[2]
+  for i=#back,1,-1 do
+    local ally=back[i]
+    if ally~=u then return math.min(2,math.floor(score_current(s,ally)/3)) end
+  end
+  return 0
 end
 function B.attack_power(s,u,target)
-  local power=score_current(s,u)
+  local power=score_current(s,u)+B.support(s,u)
   if Chains.eligible(u.card) and Chains.qualify(s.players[u.controller],u,3,false) then power=power+1 end
   if u.disabled then return power end
   local trait=u.card.strike
@@ -954,32 +1023,40 @@ function B.attack_power(s,u,target)
     or trait=='formation' and #adjacent(s,u)>0 then power=power+1 end
   return power
 end
-function B.round_result(s)
-  local a,b=s.players[1],s.players[2]
-  local function higher(x,y) return x>y and 1 or 2 end
-  local x,y=B.score(s,1),B.score(s,2)
-  if x~=y then return higher(x,y),s.combat and 'defeats' or 'Strength' end
-  if s.combat then
-    if a.damage~=b.damage then return higher(a.damage,b.damage),'damage dealt' end
-    local left=#a.rows[1]+#a.rows[2]>0
-    local right=#b.rows[1]+#b.rows[2]>0
-    if left~=right then return left and 1 or 2,'sole surviving force' end
+local function redeal(s)
+  local packs={{},{}}
+  for _,pl in ipairs(s.players) do
+    for _,zone in ipairs({pl.deck,pl.hand,pl.discard,pl.rows[1],pl.rows[2]}) do
+      for _,u in ipairs(zone) do
+        local home=u.home or u.owner
+        u.owner=home;u.controller=home;u.hp=nil;u.mod=0;u.guard=0
+        u.disabled=false;u.negate_damage=false;u.activated={};u.recovered=nil
+        packs[home][#packs[home]+1]=u
+      end
+    end
   end
-  return 0,'draw'
+  for p,pl in ipairs(s.players) do
+    pl.deck=packs[p];pl.hand={};pl.discard={};pl.rows={{},{}}
+    s.rng:shuffle(pl.deck);draw(s,p,Rules.starting_hand)
+  end
 end
-local function finish_round(s)
-  local first=B.score(s,1);local second=B.score(s,2)
-  local winner,reason=B.round_result(s)
+local function finish_round(s,winner,reason)
+  local first,second=B.score(s,1),B.score(s,2)
+  if not winner then
+    winner=first==second and 0 or first>second and 1 or 2
+    reason=winner==0 and 'stalemate' or s.combat and 'surviving units at exhaustion' or 'Strength'
+  end
   if winner>0 then s.players[winner].wins=s.players[winner].wins+1 end
   s.round_history[#s.round_history+1]={round=s.round,scores={first,second},winner=winner,reason=reason,damage={s.players[1].damage,s.players[2].damage}}
   emit(s,string.format('Round %d ends: %s %d, %s %d. %s',s.round,s.players[1].name,first,s.players[2].name,second,winner==0 and 'Tie.' or s.players[winner].name..' wins by '..reason..'.'))
-  for p=1,2 do
-    local to_discard=all_units(s,p)
-    for _,u in ipairs(to_discard) do discard_card(s,u) end
-    local pl=s.players[p]
-    pl.rows={{},{}};pl.passed=false;pl.round_turns=0;pl.defeats=0;pl.damage=0
+  for p,pl in ipairs(s.players) do
+    if not s.combat then
+      for _,u in ipairs(all_units(s,p)) do discard_card(s,u) end
+      pl.rows={{},{}}
+    end
+    pl.passed=false;pl.defeats=0;pl.damage=0;pl.bonus_next=nil
   end
-  s.chain_seen={}
+  s.chain_seen={};s.last_hold=nil;s.last_played=nil;s.last_attack=nil
   if s.round==3 or s.players[1].wins==2 or s.players[2].wins==2 then
     s.finished=true
     s.winner=s.players[1].wins>s.players[2].wins and 1 or s.players[2].wins>s.players[1].wins and 2 or 0
@@ -987,23 +1064,16 @@ local function finish_round(s)
     return
   end
   local prior_starter=s.current_round_starter
-  s.round=s.round+1;s.active=winner>0 and other(winner) or other(prior_starter)
+  s.round=s.round+1;s.active=(s.combat or winner==0) and other(prior_starter) or other(winner)
   s.current_round_starter=s.active
   s.plays_left=1
-  emit(s,'Round '..s.round..' begins. '..s.players[s.active].name..' goes first. Hands and draw decks carry forward.')
+  if s.combat then redeal(s) end
+  emit(s,'Round '..s.round..' begins. '..s.players[s.active].name..' goes first.')
 end
 local function next_turn(s)
   s.steps=s.steps+1
   if s.steps>Rules.max_steps_per_match then error('Exceeded maximum turns per match') end
   s.extra_turn=false;s.extra_granted=0
-  local acting=s.players[s.active]
-  if s.combat then
-    acting.round_turns=acting.round_turns+1
-    if acting.round_turns>=Rules.combat_turns and not acting.passed then
-      acting.passed=true
-      emit(s,acting.name.." has used all "..Rules.combat_turns.." turns this round.")
-    end
-  end
   if s.players[1].passed and s.players[2].passed then
     finish_round(s)
     if s.finished then return end
@@ -1012,41 +1082,52 @@ local function next_turn(s)
   end
   s.plays_left=1;s.turns=s.turns+1
   local p=s.active
+  local bonus=s.players[p].bonus_next or 0
+  s.players[p].bonus_next=nil;s.extra_granted=bonus;s.plays_left=1+bonus
   emit(s,s.players[p].name..' takes the turn.')
   if s.turn_draw and #s.players[p].deck>0 then draw(s,p,1,nil,true) end
   s.activation_count=0
   for _,u in ipairs(all_units(s,p)) do B.resolve(s,p,u,A.get(u.card,'turn'),{}) end
   B.check_chains(s)
-  auto_pass(s)
+  return auto_pass(s)
 end
 auto_pass=function(s)
   local p=s.active
-  if #B.attack_targets(s,p)>0 then
-    for _,u in ipairs(all_units(s,p)) do if B.ready(s,p,u) then return end end
-  end
-  if #B.legal_indices(s,p)==0 and not B.can_school(s,p) then
-    s.players[p].passed=true
-    emit(s,s.players[p].name..' passes automatically (no playable cards).')
-    next_turn(s)
+  if #B.legal_indices(s,p)>0 or B.can_school(s,p) then return end
+  local pl=s.players[p]
+  if s.combat then
+    local exhausted=#pl.deck==0
+    if exhausted and B.score(s,p)==0 and B.score(s,other(p))>0 then
+      finish_round(s,other(p),'exhausted opposing force')
+    elseif exhausted and s.last_hold==other(p) and not can_reinforce(s,other(p)) then
+      finish_round(s)
+    else
+      s.last_hold=exhausted and p or nil
+      emit(s,pl.name..' has no legal play and waits for reinforcements.')
+      return next_turn(s)
+    end
+    if not s.finished then return auto_pass(s) end
+  else
+    pl.passed=true
+    emit(s,pl.name..' passes automatically (no playable cards).')
+    return next_turn(s)
   end
 end
-function B.attack(s,p,attacker_id,target_id)
-  local attacker,target
-  for _,u in ipairs(all_units(s,p)) do if u.uid==attacker_id then attacker=u end end
-  for _,u in ipairs(B.attack_targets(s,p)) do if u.uid==target_id then target=u end end
-  if not attacker or not B.ready(s,p,attacker) then return false,'Select a ready friendly unit on your turn.' end
-  if not target then return false,'Target the enemy Front first, or the Back if Front is empty.' end
-  local front=#s.players[other(p)].rows[1]>0
-  attacker.spent=true;attacker.last_attack_round=s.round;s.activation_count=0
+local function deployment_attack(s,p,attacker)
+  local eligible=B.attack_targets(s,p)
+  if #eligible==0 then return end
+  local target=pick_unit(s,p,eligible,{op='deploy_attack',unit=attacker})
   local power=B.attack_power(s,attacker,target)
   emit(s,location(attacker)..' attacks '..location(target)..' for '..power..'.')
-  damage(s,p,target,power)
+  measure(s,attacker,'attacks');measure(s,attacker,'modified_attacks',score_current(s,attacker)~=attacker.card.strength and 1 or 0)
+  damage(s,p,target,power,{source=attacker,kind='attack_damage'})
   local counter=0
-  if front and target.hp and attacker.hp and target.controller==other(p) and attacker.controller==p then
+  if target.hp and attacker.hp and target.controller==other(p) and attacker.controller==p then
     counter=math.floor(score_current(s,target)/2)
+    measure(s,target,'modified_counters',counter~=math.floor(target.card.strength/2) and 1 or 0)
     if counter>0 then
       emit(s,location(target)..' counters '..location(attacker)..' for '..counter..'.')
-      damage(s,other(p),attacker,counter)
+      damage(s,other(p),attacker,counter,{source=target,kind='counter_damage'})
     end
   end
   local result=target.hp and target.hp..'/'..target.card.health..' HP' or 'defeated'
@@ -1055,21 +1136,19 @@ function B.attack(s,p,attacker_id,target_id)
     local after=attacker.hp and attacker.hp..'/'..attacker.card.health..' HP' or 'defeated'
     s.last_attack=s.last_attack..' Counter: '..location(attacker)..' ('..after..').'
   end
-  B.check_chains(s)
-  next_turn(s)
-  return true
 end
 -- Heavy units played from hand need a light ally to deploy at full Health.
 -- Summons and named replacements use their own entry abilities.
 function B.deployment_health(s,p,card)
   if not s.combat or card.type~='Unit' or card.strength<5 or card.replaces then return card.health end
   for _,u in ipairs(all_units(s,p)) do if u.card.strength<=3 then return card.health end end
-  return math.ceil(card.health/2)
+  return math.min(2,card.health)
 end
 function B.play(s,p,index,row,pos)
   local ok,why=B.playable(s,p,index);if not ok then return false,why end
   local hand=s.players[p].hand;local card=hand[index]
   local side=B.deploy_side(p,card.card);local host
+  local earned={{},{}}
   if card.card.replaces then
     host=B.choose(s,p,'unit',B.hosts(s,p,card.card),{op='replace'})
     if not host then return false,'Choose the Unit to replace' end
@@ -1078,16 +1157,19 @@ function B.play(s,p,index,row,pos)
     local units=s.players[side].rows[row]
     if not pos or pos%1~=0 or pos<1 or pos>#units+1 then return false,'Invalid insertion position' end
   end
-  s.last_played=card;s.last_attack=nil
+  measure(s,card,'plays')
+  s.last_hold=nil;s.last_played=card;s.last_attack=nil
   table.remove(hand,index);s.plays_left=s.plays_left-1;s.activation_count=0
   s.stats.played[p]=s.stats.played[p]+1
   if card.card.type=='Unit' then
     prepare_unit(s,card,side)
     card.hp=B.deployment_health(s,side,card.card)
     if card.hp<card.card.health then
-      emit(s,location(card)..' deploys without light support at '..card.hp..'/'..card.card.health..' HP.')
+      card.mod=2-card.card.strength
+      emit(s,location(card)..' deploys at 2 Strength without light support at '..card.hp..'/'..card.card.health..' HP.')
     end
     if host then
+      measure(s,card,'replacements')
       -- The host leaves play without being destroyed, so no Last Breath or kill trigger applies.
       local _,r,i=B.position(s,host)
       row,pos=r,i
@@ -1100,19 +1182,23 @@ function B.play(s,p,index,row,pos)
       emit(s,string.format('%s plays %s into %s%s position %d.',s.players[p].name,location(card),
         side~=p and s.players[side].name..' ' or '',row==1 and 'Front' or 'Back',pos))
     end
-    B.resolve(s,p,card,A.get(card.card,'deploy'),{})
+    if s.combat then
+      collect_triggers(s,side,earned[side])
+      if not card.card.agent then deployment_attack(s,p,card) end
+    end
+    B.resolve(s,p,card,A.get(card.card,'deploy'),{entry_row=row})
   else
     emit(s,s.players[p].name..' plays '..card.card.name..' (Effect).')
     B.resolve(s,p,card,A.get(card.card,'play'),{})
     discard_card(s,card)
   end
-  B.check_chains(s)
+  B.check_chains(s,earned)
   if s.plays_left<=0 or #B.legal_indices(s,p)==0 then next_turn(s) else s.extra_turn=true end
   return true
 end
 function B.school(s,p)
   if s.active~=p or not B.can_school(s,p) then return false,'School of Goldfish not available' end
-  s.last_attack=nil;s.school_used[p]=true;s.plays_left=s.plays_left-1;s.activation_count=0
+  s.last_hold=nil;s.last_attack=nil;s.school_used[p]=true;s.plays_left=s.plays_left-1;s.activation_count=0
   local hand=s.players[p].hand
   local cards={};for _,c in ipairs(hand) do cards[#cards+1]=c end
   s.players[p].hand={}
@@ -1137,6 +1223,13 @@ function B.end_extra(s,p)
 end
 function B.pass(s,p)
   if s.active~=p or s.finished or s.players[p].passed then return false,'Cannot pass' end
+  if s.combat then
+    emit(s,s.players[p].name..' concedes the round.')
+    s.extra_turn=false;s.extra_granted=0
+    finish_round(s,other(p),'concession')
+    if not s.finished then auto_pass(s) end
+    return true
+  end
   s.players[p].passed=true;s.plays_left=0
   emit(s,s.players[p].name..' passes the round.')
   next_turn(s)

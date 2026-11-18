@@ -31,16 +31,24 @@ function loadDraft() {
       for (const s of saved.seats) {
         const f=faction(s.faction)
         // Upgrade an untouched starter. Keep deliberately tagged lists and later 20-card choices.
-        const old=f.id==='Super' ? f.starter : [f.id==='Water'?43:48,1,2,3,4,21,28,31,32,40,5,6,7,8,9,10,11,12,13,15,16,17,18,19,20,23,25,29,33,39].map(n=>f.id+':'+n)
+        const old=f.id==='Super' ? f.previousStarter : [f.id==='Water'?43:48,1,2,3,4,21,28,31,32,40,5,6,7,8,9,10,11,12,13,15,16,17,18,19,20,23,25,29,33,39].map(n=>f.id+':'+n)
         const expected=!saved.starterVersion && s.deck.length===20 ? old.slice(0,20) : old
         if (s.deck.length===expected.length && expected.every((id,i)=>s.deck[i]===id)) s.deck=[...f.starter]
       }
       saved.starterVersion=3
       api.save('draft',saved)
     }
+    if (saved.starterVersion===3) {
+      for (const s of saved.seats) {
+        const f=faction(s.faction)
+        if (s.deck.length===f.previousStarter.length && f.previousStarter.every((id,i)=>s.deck[i]===id)) s.deck=[...f.starter]
+      }
+      saved.starterVersion=4
+      api.save('draft',saved)
+    }
     return saved
   }
-  return {starterVersion:3, mode:'solo', difficulty:'normal', seats:[defaultSeat('Fantasy'),defaultSeat('Water')]}
+  return {starterVersion:4, mode:'solo', difficulty:'normal', seats:[defaultSeat('Fantasy'),defaultSeat('Water')]}
 }
 function message(text) {
   const toast = document.querySelector('#toast')
@@ -104,7 +112,7 @@ function lobby() {
     ${solo?btn(match.busy?'Opening match…':'Start online match →','start','','primary',!live):
       btn('Create room →','create','','primary',!live)+btn('Join room','join','','full',!live || !/^[A-Z0-9]{6}$/.test(roomInput))}
     </section></div>
-    <div class="facts"><div><small>Match format</small><strong>Best of three</strong></div><div><small>Opening hand</small><strong>${catalog.opening} cards</strong></div><div><small>Battle deck</small><strong>${deckRange()} cards</strong></div><div><small>Each turn</small><strong>Play, attack or pass</strong></div></div>`
+    <div class="facts"><div><small>Match format</small><strong>Best of three</strong></div><div><small>Opening hand</small><strong>${catalog.opening} cards</strong></div><div><small>Battle deck</small><strong>${deckRange()} cards</strong></div><div><small>Each turn</small><strong>Play a card</strong></div></div>`
 }
 function workshop() {
   const s=seat(), f=faction(s.faction), counts={}
@@ -209,7 +217,10 @@ async function dispatch(action,value) {
     if (valid({...s,deck})) s.deck=deck
     return saveDraft()
   }
-  if (action==='catalog') {const c=cards()[value];return modal(null,inspect(c))}
+  if (action==='catalog') {
+    const hint=derive(JSON.stringify({guideCard:value,deck:seat().deck}))
+    return modal(null,inspect(cards()[value])+(hint?'<p class="hint">'+esc(hint)+'</p>':''))
+  }
   if (['start','join','create'].includes(action)) {
     if (api.read('match') && !dialog.open) {
       return modal('Start a new match?', '<p>Starting or joining a new match closes your current match for both players.</p>'+btn('Continue',action,'','primary'))
@@ -239,7 +250,7 @@ async function dispatch(action,value) {
     const available=match.ready && !v.prompt
     const pick=available && legal.ok
     const text=c.replaces?'Play onto '+name(cards()[c.replaces]):c.type==='Effect'?'Play effect':'Choose placement'
-    const entry=c.health && legal.deployHp<c.health ? '<p class="hint">Deploys at '+legal.deployHp+'/'+c.health+' HP. Field an ally with base Strength 1–3 for full Health.</p>' : ''
+    const entry=c.health && legal.deployHp<c.health ? '<p class="hint">Deploys at 2 Strength and '+legal.deployHp+'/'+c.health+' HP. Field an ally with base Strength 1–3 for full Strength and Health.</p>' : ''
     return modal(null, inspect(c,u,metrics)+entry+(pick?btn(text,'select',u.u,'primary'):available?'<p class="warn">'+esc(legal.reason)+'</p>':''))
   }
   if (action==='select') {
@@ -250,35 +261,18 @@ async function dispatch(action,value) {
     if (cards()[u.c].type==='Effect'||cards()[u.c].replaces) return play()
     render();root.querySelector('.placing')?.scrollIntoView({block:'center',behavior:'smooth'});return
   }
-  if (action==='attackers' || action==='targets') {
-    if (!match.ready || v.prompt) return
-    const options=action==='attackers' ? Object.keys(metrics.attacks).map(id=>({id:Number(id)})) :
-      (metrics.attacks[value] || []).map(o=>({id:o.target,power:o.power}))
-    const buttons=options.map(({id,power})=>{
-      const pos=metrics.units[id], unit=v.players[pos.seat-1].rows[pos.row-1][pos.pos-1], c=cards()[unit.c]
-      const detail=(pos.row===1?'Front':'Back')+' '+pos.pos+' · '+pos.strength+' STR · '+unit.hp+'/'+c.health+' HP'
-      const defense=unit.nd ? ' · Barrier' : unit.g ? ' · Guard '+unit.g : ''
-      const label=power==null ? detail : detail+defense+' · Attack for '+power+' before protection'
-      return `<button class="option" data-action="${power==null?'targets':'strike'}" data-value="${power==null?id:value+','+id}">${art(c)}<span><strong>${esc(name(c))}</strong><small>${esc(label)}</small></span></button>`
-    }).join('')
-    return modal(action==='attackers'?'Choose your attacker':'Choose an enemy', '<p>'+(
-      action==='attackers'?'Each unit can make one basic attack per round.':'A surviving Front defender counters for half its Strength, rounded down.')+'</p>'+buttons)
-  }
-  if (action==='strike' && modalView===v && match.ready && !v.prompt) {
-    const [attacker,target]=value.split(',').map(Number)
-    dialog.close()
-    return match.act({type:'attack',attacker,target})
-  }
   if (action==='unit') {
     const u=v.players.flatMap(p=>p.rows.flat().concat(p.discard)).find(u=>String(u.u)===value)
-    return modal(null,inspect(cards()[u.c],u,metrics)+(match.ready && !v.prompt && metrics.attacks[u.u] ? btn('Attack with this unit','targets',u.u,'primary') : ''))
+    return modal(null,inspect(cards()[u.c],u,metrics))
   }
   if (action==='slot' && handIndex()>=0) {
     const [row,pos]=value.split(',').map(Number)
     return match.act({type:'play',index:handIndex()+1,row,pos})
   }
   if (action==='play' && handIndex()>=0) return play()
-  if (['pass','end','school'].includes(action)) return match.act({type:action})
+  if (action==='pass') return modal('Concede this round?', '<p>Your opponent wins this round immediately.</p>'+btn('Keep playing','dismiss')+btn('Concede round','concede','','quiet'))
+  if (action==='concede' && modalView===v && match.ready) {dialog.close();return match.act({type:'pass'})}
+  if (['end','school'].includes(action)) return match.act({type:action})
   if (action==='choice' && v.prompt?.kind) return showChoice()
   if (action==='answer' && v.prompt?.kind && modalView===v && match.ready) {
     dialog.close();return match.act({type:'choose',index:Number(value)})
@@ -289,7 +283,7 @@ async function dispatch(action,value) {
       '<div class="pile-grid">'+pile.map(u=>cardFace(cards()[u.c],'unit',u.u)).join('')+'</div>':'<p>The pile is empty.</p>')
   }
   if (action==='history') return modal('Event history','<ol class="history">'+match.log.map(l=>'<li>'+esc(eventText(l))+'</li>').join('')+'</ol>')
-  if (action==='scores') return modal('Round results',`<p>Enemy units defeated this round. You are ${esc(v.players[v.seat-1].name)}.</p>`+
+  if (action==='scores') return modal('Round results',`<p>Surviving units at round end. You are ${esc(v.players[v.seat-1].name)}.</p>`+
     (v.history.length ? v.history.map(r=>`<div class="score-entry"><b>Round ${r.round}</b><span>${esc(v.players[0].name)} · ${r.scores[0]} / ${esc(v.players[1].name)} · ${r.scores[1]}</span>
     ${r.damage ? '<small>Enemy Health removed · '+r.damage[0]+' / '+r.damage[1]+'</small>' : ''}
     <strong>${r.winner ? esc(v.players[r.winner-1].name)+' won by '+esc(r.reason) : 'Draw'}</strong></div>`).join('') : '<p>No completed rounds yet.</p>'))

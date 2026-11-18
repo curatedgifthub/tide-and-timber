@@ -72,9 +72,7 @@ function Smoke.new(app,scenario)
           local legal={}
           for i=1,#hand do if B.playable(s,me,i) then legal[#legal+1]=i end end
           if B.can_school(s,me) then click("school")
-          elseif find("attack") and (#legal==0 or rng:random(3)==1) then
-            click("attack");click("option-1");click("option-1")
-          elseif #legal==0 or rng:random(14)==1 then click("pass")
+          elseif #legal==0 or rng:random(14)==1 then click("pass");click("option-2")
           else
             local i=legal[rng:random(#legal)];local card=hand[i].card
             handcard(i);assert(app.selected==i,"card not selected")

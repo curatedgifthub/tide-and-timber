@@ -78,12 +78,18 @@ end
 
 -- A suggested selection is applied only on request. Include the faction's
 -- featured Unit and a mix of printed ranks, Bridge, recovery and combat.
-function Library.starter(cfg,p,size)
+function Library.starter(cfg,p,size,previous)
   size=size or Rules.max_deck_size
   assert(size>=Rules.min_deck_size and size<=Rules.max_deck_size and size%1==0)
   local f=cfg.factions[p]
   local deck,seen={},{}
   local spec=Library.specs[f]
+  if size==Rules.max_deck_size and spec.starter30 and not previous then
+    for _,n in ipairs(spec.starter30) do deck[#deck+1]=f..':'..n end
+    assert(#deck==size and Decks.validate_selection(deck,f,Library.owned[f]))
+    cfg.decks[p]=deck
+    return
+  end
   local order=spec.starter or {spec.featured,1,2,3,4,21,28,31,32,40,5,6,7,8,9,10,11,12,13,15,16,17,18,19,20,23,25,29,33,39}
   local function take(id)
     if #deck<size and Library.owned[f][id] and not seen[id] then

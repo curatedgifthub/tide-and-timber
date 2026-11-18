@@ -12,7 +12,7 @@ export function art(card) {
 export const eventText = line => line.replace(/#\d+/g, '')
 export function cardFace(card, action, value, options = {}) {
   const {strength = card.strength, hp = card.health, selected, status, suppressed} = options
-  const labels = [card.bridge && !suppressed && status !== 'Bridge chain' && 'Bridge', status, options.spent && 'Attack used'].filter(Boolean)
+  const labels = [card.bridge && !suppressed && status !== 'Bridge chain' && 'Bridge', status].filter(Boolean)
   const stats = card.type === 'Unit'
     ? `<span class="card-stats"><span aria-label="Strength ${strength}">${strength} STR</span>
        <b class="unit-hp${hp < card.health ? ' wounded' : ''}" aria-label="Health ${hp} of ${card.health}">${hp}/${card.health} HP</b></span>`
@@ -23,12 +23,12 @@ export function cardFace(card, action, value, options = {}) {
 }
 export function inspect(card, unit, metrics) {
   const state = unit && metrics?.units[unit.u]
-  const tags = [state?.cross ? 'Bridge chain' : state?.chain && 'Chain '+state.chain, unit?.ch && 'Chain used', unit?.spent && 'Attack used',
-    unit?.g && 'Guard '+unit.g, unit?.dis && 'Suppressed', unit?.nd && 'Barrier'].filter(Boolean)
+  const tags = [state?.cross ? 'Bridge chain' : state?.chain && 'Chain '+state.chain, unit?.ch && 'Chain used',
+    unit?.g && 'Guard '+unit.g, unit?.dis && 'Suppressed', unit?.nd && 'Barrier', unit?.recovered && 'Discard recovery used this round'].filter(Boolean)
   const strength = state?.strength ?? card.strength
   return `<div class="inspection f-${esc(card.faction)}"><div class="portrait">${art(card)}</div>
     <h2 id="dialog-title">${esc(name(card))}</h2>
     ${card.type==='Unit' ? `<dl class="numbers"><div><dt>Strength</dt><dd>${strength}${strength!==card.strength ? ' <small>(base '+card.strength+')</small>' : ''}</dd></div><div><dt>Health</dt><dd>${unit?.hp ?? card.health}/${card.health}</dd></div></dl>` : '<small>Effect</small>'}
-    ${!unit && card.strength>=5 && !card.replaces ? '<p class="hint">Heavy · Field an ally with base Strength 1–3 to deploy at full Health. Otherwise this unit enters at '+Math.ceil(card.health/2)+'/'+card.health+' HP.</p>' : ''}
+    ${!unit && card.strength>=5 && !card.replaces ? '<p class="hint">Heavy · Field an ally with base Strength 1–3 to deploy at full Health. Otherwise this unit enters at 2 Strength and 2/'+card.health+' HP.</p>' : ''}
     <p class="rules">${esc(card.text)}</p>${tags.length ? '<p>'+esc(tags.join(' · '))+'</p>' : ''}</div>`
 }

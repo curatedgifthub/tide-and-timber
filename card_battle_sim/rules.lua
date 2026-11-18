@@ -1,13 +1,11 @@
 -- Temporary resolutions for underspecified cases. Read DECISIONS.md.
 return {
   starting_hand = 5,
-  combat_turns = 8,
   min_deck_size = 20,
   max_deck_size = 30,
   -- Explicit fixed-size scenarios from the original terminal simulator.
   classic = {starting_hand=10, max_hand=12},
   max_activations_per_action = 200,
-  max_turns_per_round = 500,
   max_steps_per_match = 2000,
   -- Players choose simultaneous friendly chain triggers; opposing triggers resolve afterward.
   -- No valid target: optional or mandatory ability safely fizzles, card is still played.

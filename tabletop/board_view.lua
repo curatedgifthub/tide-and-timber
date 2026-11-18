@@ -3,7 +3,6 @@ local P=require('tabletop.paint')
 local Lib=require('tabletop.library')
 local B=require('battle')
 local Chains=require('chains')
-local Rules=require('rules')
 local V={}
 -- The battlefield is always drawn from the player's own seat: their rows and hand at the
 -- bottom, the other side on top. The state is the mirror of the server's view, so the
@@ -65,7 +64,7 @@ local function row(app,p,r,y,chains)
     local cw=pitch-19
     for i=start,stop do
       local u=cards[i];local xx=left+10+(i-start)*pitch
-      P.card(u.card,xx,y+3,cw,82,{chain=chains[u],linked=app.bridgeEnds[u],disabled=u.disabled,spent=u.spent,
+      P.card(u.card,xx,y+3,cw,82,{chain=chains[u],linked=app.bridgeEnds[u],disabled=u.disabled,
         strength=B.strength(s,u),hp=u.hp,selected=app.inspected==u})
       if app.flash[u.uid] and app.flashTime>0 then P.border(xx-1,y+2,cw+2,84,P.bright,math.min(1,app.flashTime)) end
       if i>start and app.chainEdges[cards[i-1].uid.."/"..u.uid] then
@@ -104,9 +103,8 @@ local function scoreBar(app,p,x)
   P.one(Lib.label(pl.faction),x+38,94,133,22,P.textColor,"serif")
   local score=s.finished and #s.round_history>0 and s.round_history[#s.round_history].scores[p] or B.score(s,p)
   P.one(score,x+165,83,51,41,P.textColor,"serif","right")
-  P.text("KOs",x+223,107,12,P.muted,"bold")
+  P.text("units",x+223,107,12,P.muted,"bold")
   for i=1,2 do P.diamond(x+270+(i-1)*16,104,5,i<=pl.wins and P.gold or P.rule,i<=pl.wins) end
-  P.one((s.finished and s.round_history[#s.round_history].damage and s.round_history[#s.round_history].damage[p] or pl.damage or 0).." damage · "..((s.finished or pl.passed) and 0 or math.max(0,Rules.combat_turns-(pl.round_turns or 0))).." turns left",x+7,120,155,12,P.muted)
   P.text("Draw "..#pl.deck,x+7,139,15,P.muted)
   P.button("pile-"..p,"Discard "..#pl.discard,x+78,134,99,26,function() app:pile(p,"discard") end)
   P.button("hand-"..p,"Hand "..#pl.hand,x+184,134,85,26,function() app:pile(p,"hand") end)
@@ -142,9 +140,9 @@ local function inspector(app,u)
   end
   P.text(ability,x+15,top,size,P.textColor,"sans",w-30)
   local tags={}
-  if u.spent then tags[#tags+1]="Attack used" end
   if u.activated and u.activated.chain then tags[#tags+1]="Chain used" end
   if (u.guard or 0)>0 then tags[#tags+1]="Guard "..u.guard end
+  if u.recovered then tags[#tags+1]="Recovery used" end
   if u.negate_damage then tags[#tags+1]="Barrier" end
   if u.disabled then tags[#tags+1]="Suppressed" end
   if u.hp and u.mod~=0 then tags[#tags+1]=string.format("%+d STR",u.mod) end
@@ -229,11 +227,11 @@ function V.draw(app)
     or chosen and (chosen.card.type=="Effect" and "Choose Play effect to resolve."
       or chosen.card.replaces and "Choose Play onto "..Lib.cards.by_id[chosen.card.replaces].name.." to resolve."
       or chosen.card.agent and "Choose a gold marker on the opposing battlefield."
-      or B.deployment_health(s,me,chosen.card)<chosen.card.health and ("Deploys at "..B.deployment_health(s,me,chosen.card).."/"..chosen.card.health.." HP without a light ally.")
+      or B.deployment_health(s,me,chosen.card)<chosen.card.health and ("Deploys at 2 STR and "..B.deployment_health(s,me,chosen.card).."/"..chosen.card.health.." HP without a light ally.")
       or chosen.card.bridge and "Place at a right end to link Front and Back."
       or Placement.bonus(chosen.card,2) and "Back row bonus · "..Placement.bonus(chosen.card,2)
       or "Front guards Back. Choose a gold marker.")
-    or "Play a card, attack with a unit or pass."
+    or "Play a unit to place it and attack."
   local perPage=app.handPageSize
   local pages=math.max(1,math.ceil(#hand/perPage))
   local page=math.min(pages,app.handPages[me])
@@ -284,12 +282,11 @@ function V.draw(app)
       P.button("play-effect","Play onto "..Lib.cards.by_id[chosen.card.replaces].name.."   →",x,y+27,328,44,function() app:action({type="play",index=app.selected}) end,"gold")
     elseif s.extra_turn then P.button("end-extra","End extra plays",x,y+27,328,44,function() app:action({type="end"}) end)
     else P.button("manual-help",chosen and "Choose a row position" or "Select a hand card",x,y+27,328,44,nil,nil,false) end
-    local attack=false
-    if #B.attack_targets(s,me)>0 then
-      for _,u in ipairs(B.units(s,me)) do if B.ready(s,me,u) then attack=true;break end end
-    end
-    if attack then P.button("attack","Attack with a unit",x,y+80,174,44,function() app:attackMenu() end,"gold") end
-    P.button("pass","Pass this round",attack and x+180 or x,y+80,attack and 148 or 328,44,function() app:action({type="pass"}) end,"accent")
+    P.button("pass","Concede round",x,y+80,328,44,function()
+      app:list("Concede this round?","Your opponent immediately wins this round.",{
+        {title="Keep playing",action=function() app.modal=nil end},
+        {title="Concede round",action=function() app:action({type="pass"}) end}})
+    end,"accent")
   else
     P.button("manual-help",waiting(app) or "Answer the question",x,y+27,328,44,nil,nil,false)
     P.one(m.mode=="duel" and "Every move is checked and dealt by the game server." or "The computer plays on the game server.",x,y+85,328,14,P.muted,"sans")

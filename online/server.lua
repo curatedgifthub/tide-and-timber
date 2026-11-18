@@ -51,7 +51,6 @@ end
 local function perform(s,action,difficulty)
   local p,t=s.active,action.type
   if t=='ai' then return AI.step(s,p,difficulty) end
-  if t=='attack' then return B.attack(s,p,action.attacker,action.target) end
   if t=='pass' then return B.pass(s,p) end
   if t=='end' then return B.end_extra(s,p) end
   if t=='school' then return B.school(s,p) end
@@ -86,11 +85,6 @@ end
 local function clean(action)
   local t=action.type
   if t=='pass' or t=='end' or t=='school' then return {type=t} end
-  if t=='attack' then
-    local attacker,target=whole(action.attacker,1000),whole(action.target,1000)
-    if attacker and target then return {type=t,attacker=attacker,target=target} end
-    return nil
-  end
   if t~='play' then return nil end
   local index=whole(action.index,1000)
   if not index then return nil end

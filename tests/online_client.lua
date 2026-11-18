@@ -11,8 +11,8 @@ local B=require('battle')
 local U=require('util')
 local cases={}
 local function test(label,fn) cases[#cases+1]={label,fn} end
-local function deck(faction,size)
-  local c={factions={faction,faction},decks={{},{}}};L.starter(c,1,size or 30);return c.decks[1]
+local function deck(faction)
+  local c={factions={faction,faction},decks={{},{}}};L.starter(c,1);return c.decks[1]
 end
 -- net.lose_request / net.lose_reply: how many of the next requests to drop on each side.
 local function network(host)
@@ -91,7 +91,7 @@ test("Single player online through the session: paced computer moves, complete m
     local frames,waited=0,0
     local s=Session.new(api,{pace=1,on_frame=function() frames=frames+1 end,token='t'..i})
     local f1,f2=L.factions[i%3+1],L.factions[(i+1)%3+1]
-    s:start_solo({faction=f1,deck=deck(f1,24)},{faction=f2,difficulty=i%2==0 and 'easy' or 'normal'},host.rules)
+    s:start_solo({faction=f1,deck=deck(f1)},{faction=f2,difficulty=i%2==0 and 'easy' or 'normal'},host.rules)
     assert(s.phase=='playing' and s.seat==1 and s.mode=='solo' and s.controllers[2]=='AI',s.error)
     local guard=0
     while s.phase=='playing' do
@@ -117,13 +117,13 @@ test("Two players online through two sessions: room code, polling, both screens 
     local a,netA=client(host);local b,netB=client(host)
     local ann,bob=Session.new(a,{poll=1,idle_poll=3,token='a'}),Session.new(b,{poll=1,idle_poll=3,token='b'})
     local f1,f2=L.factions[i%3+1],L.factions[(i+2)%3+1]
-    ann:open_room({faction=f1,deck=deck(f1,22)},host.rules)
+    ann:open_room({faction=f1,deck=deck(f1)},host.rules)
     assert(ann.phase=='waiting' and #ann.code==6 and not ann.state)
     local sent=netA.sent;ann:update(0.4);assert(netA.sent==sent,'polls are spaced out')
     ann:update(1);assert(netA.sent==sent+1 and ann.phase=='waiting')
-    local wrong=Session.new(b);wrong:join_room('NOPE00',{faction=f2,deck=deck(f2,22)},host.rules)
+    local wrong=Session.new(b);wrong:join_room('NOPE00',{faction=f2,deck=deck(f2)},host.rules)
     assert(wrong.phase=='failed' and wrong.code_error=='room_not_found' and wrong.error:find('code',1,true))
-    bob:join_room(ann.code,{faction=f2,deck=deck(f2,22)},host.rules)
+    bob:join_room(ann.code,{faction=f2,deck=deck(f2)},host.rules)
     assert(bob.phase=='playing' and bob.seat==2)
     ann:update(1);ann:update(0);assert(ann.phase=='playing' and ann.seat==1 and ann.state,'the host learns of the guest by polling')
     local guard=0
@@ -151,16 +151,17 @@ test("Lost requests and lost replies: every move is applied exactly once",functi
   local host=Host.new({seed=9});local rng=U.rng(3)
   local a,netA=client(host);local b,netB=client(host)
   local ann,bob=Session.new(a,{poll=1,retry=1,token='a'}),Session.new(b,{poll=1,retry=1,token='b'})
-  ann:open_room({faction='Water',deck=deck('Water',26)},host.rules)
-  bob:join_room(ann.code,{faction='Super',deck=deck('Super',26)},host.rules)
+  ann:open_room({faction='Water',deck=deck('Water')},host.rules)
+  bob:join_room(ann.code,{faction='Super',deck=deck('Super')},host.rules)
   ann:update(1);ann:update(0)
   local m=host.matches[ann.match];local guard,lost=0,0
+  local recovered={}
   while ann.phase=='playing' or bob.phase=='playing' do
     guard=guard+1;assert(guard<20000,'stuck')
     for _,pair in ipairs({{ann,netA},{bob,netB}}) do
       local s,net=pair[1],pair[2]
       if s:ready() then
-        local before=m.seq;local kind=guard%7
+        local before=m.seq;local kind=lost%3+1
         if kind==1 then net.lose_request=1 elseif kind==2 then net.lose_reply=1 elseif kind==3 then net.lose_request=2;net.lose_reply=1 end
         assert(s:act(decide(s,rng)))
         if kind>=1 and kind<=3 then
@@ -169,17 +170,19 @@ test("Lost requests and lost replies: every move is applied exactly once",functi
           local spins=0
           while s.offline or s.pending_action do s:update(1);spins=spins+1;assert(spins<20) end
           assert(m.seq==before+1,'after recovery the move counts once')
+          recovered[kind]=true
         end
       end
     end
     ann:update(0.5);bob:update(0.5)
   end
-  assert(lost>20 and m.status=='finished' and #ann.mirror.log==#m.log and #bob.mirror.log==#m.log)
+  assert(recovered[1] and recovered[2] and recovered[3],"must recover a lost request, lost reply, and repeated loss")
+  assert(m.status=='finished' and #ann.mirror.log==#m.log and #bob.mirror.log==#m.log)
   for n,line in ipairs(m.log) do assert(ann.mirror.log[n]==line and bob.mirror.log[n]==line) end
   -- While the connection is down the session keeps trying and says so.
   local host2=Host.new({seed=2});local c,netC=client(host2)
   local solo=Session.new(c,{pace=0,retry=1,token='c'})
-  solo:start_solo({faction='Fantasy',deck=deck('Fantasy',30)},{faction='Water'},host2.rules)
+  solo:start_solo({faction='Fantasy',deck=deck('Fantasy')},{faction='Water'},host2.rules)
   local spins=0
   while not solo:ready() do solo:update(1);spins=spins+1;assert(spins<50) end
   netC.down=true;assert(solo:act({type='pass'}));assert(solo.offline)
@@ -196,12 +199,13 @@ test("Leaving, resuming after a restart, refused starts",function()
   local saved={}
   local ann=Session.new(a,{poll=1,token='a',remember=function(id) saved.match=id end})
   local bob=Session.new(b,{poll=1,token='b'})
-  ann:open_room({faction='Fantasy',deck=deck('Fantasy',30)},host.rules);assert(saved.match==ann.match)
-  bob:join_room(ann.code,{faction='Water',deck=deck('Water',30)},host.rules)
+  ann:open_room({faction='Fantasy',deck=deck('Fantasy')},host.rules);assert(saved.match==ann.match)
+  bob:join_room(ann.code,{faction='Water',deck=deck('Water')},host.rules)
   for _=1,3 do ann:update(1) end
   for _=1,40 do
     for _,s in ipairs({ann,bob}) do if s:ready() then assert(s:act(decide(s,rng))) end end
     ann:update(0.5);bob:update(0.5)
+    if #ann.mirror.log>5 and ann.seq==bob.seq and #ann.queue==0 and #bob.queue==0 then break end
   end
   assert(ann.phase=='playing' and #ann.mirror.log>5)
   -- A new launch picks the match up again with the whole record and the same seat.
@@ -216,12 +220,12 @@ test("Leaving, resuming after a restart, refused starts",function()
   local gone=Session.new(a);gone:resume('match-missing');assert(gone.phase=='failed')
   -- Closing an open room removes it.
   local c=client(host);local lone=Session.new(c)
-  lone:open_room({faction='Water',deck=deck('Water',30)},host.rules);local id=lone.match
+  lone:open_room({faction='Water',deck=deck('Water')},host.rules);local id=lone.match
   lone:leave();assert(not host.matches[id])
   -- Refused starts explain themselves.
   local s=Session.new(c);s:start_solo({faction='Water',deck={}},{faction='Water'},host.rules)
-  assert(s.phase=='failed' and s.code_error=='invalid_deck' and s.error:find('Select at least',1,true))
-  s=Session.new(c);s:start_solo({faction='Water',deck=deck('Water',30)},{faction='Water'},'old-rules')
+  assert(s.phase=='failed' and s.code_error=='invalid_deck' and s.error:find('expected 20',1,true))
+  s=Session.new(c);s:start_solo({faction='Water',deck=deck('Water')},{faction='Water'},'old-rules')
   assert(s.phase=='failed' and s.code_error=='rules_mismatch')
 end)
 

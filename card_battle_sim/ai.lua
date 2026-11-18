@@ -1,11 +1,13 @@
 -- Heuristic opponent with the same play/pass actions and information limits as players.
 local C=require('data.cards')
 local Chains=require('chains')
+local A=require('abilities')
 local B=require('battle')
 local AI={}
 local function chain_value(row,index,card)
+  if not Chains.eligible(card) then return 0 end
   local temp={}
-  for i,v in ipairs(row) do temp[i]=v.card.strength end
+  for i,v in ipairs(row) do temp[i]=Chains.eligible(v.card) and v.card.strength or math.huge end
   table.insert(temp,index,card.strength)
   local points=0
   for dir=-1,1,2 do
@@ -70,8 +72,15 @@ local function evaluate(s,p,index,row,pos)
     local id=card.id
     if id=='Super:39' or id=='Fantasy:40' or id=='Water:37' then val=6 end
     if id=='Water:31' or id=='Super:33' or id=='Fantasy:32' then val=2+#B.units(s,p) end
-    if id=='Super:32' or id=='Super:38' or id=='Water:56' or id=='Fantasy:31' then val=2+#B.units(s,3-p) end
-    if #B.units(s,p)==0 and #B.units(s,3-p)==0 then val=val-5 end
+    if id=='Super:38' or id=='Water:56' or id=='Fantasy:31' then val=2+#B.units(s,3-p) end
+    if id=='Super:57' then
+      for _,character in ipairs(A.get(card,'play')[1].characters) do
+        local unit=C.by_id[character]
+        if holds(mine.deck,character) or holds(mine.hand,character) or unit.repel and holds(mine.discard,character) then
+          val=val+unit.strength*1.1
+        end
+      end
+    elseif #B.units(s,p)==0 and #B.units(s,3-p)==0 then val=val-5 end
   end
   if s.round==1 then val=val-(foe-me>8 and 1.0 or 0) end
   return val

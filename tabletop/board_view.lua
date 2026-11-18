@@ -103,6 +103,11 @@ local function scoreBar(app,p,x)
   P.text("Draw "..#pl.deck,x+7,139,15,P.muted)
   P.button("pile-"..p,"Discard "..#pl.discard,x+78,134,99,26,function() app:pile(p,"discard") end)
   P.button("hand-"..p,"Hand "..#pl.hand,x+184,134,85,26,function() app:pile(p,"hand") end)
+  local top=pl.discard[#pl.discard]
+  P.box(x+311,84,48,48,P.inset);P.border(x+311,84,48,48,P.rule)
+  if top then P.art(top.card,x+314,87,42,42)
+  else P.icon("cards",x+335,108,14,P.rule) end
+  P.hit("discard-art-"..p,x+311,84,48,48,function() app:pile(p,"discard") end)
   if pl.passed then P.label("Passed",x+283,140,P.gold) end
 end
 local function inspector(app,u)

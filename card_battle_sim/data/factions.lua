@@ -7,7 +7,7 @@ return {
   {id="Water", emblem="wave", color={0.40,0.74,0.78},
    ink={0.09,0.23,0.26}, paper={0.65,0.79,0.77}, art="tabletop/assets/water", featured=43,
    neutral={"Carnival"}, enabled={{1,74}}},
-  {id="Super", label="Comic", emblem="bolt", color={0.80,0.62,0.80},
+  {id="Super", label="Comic", starter={66,61,15,27,32,57,71,72,73,74,75,76,77,78,2,3,11,20,21,62}, numerical_chains=false, emblem="bolt", color={0.80,0.62,0.80},
    ink={0.24,0.17,0.29}, paper={0.78,0.70,0.78}, art="tabletop/assets/super", featured=66,
    neutral={"Carnival"}, enabled={{1,78}}},
   {id="Carnival", primary=false, emblem="cards", color={.83,.69,.41},

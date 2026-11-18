@@ -24,8 +24,8 @@ local function same(a,b,path)
   for k in pairs(b) do if a[k]==nil then error(path..'.'..tostring(k)..': missing on the left',0) end end
   return true
 end
-local function deck(faction,size)
-  local c={factions={faction,faction},decks={{},{}}};L.starter(c,1,size or 30);return c.decks[1]
+local function deck(faction)
+  local c={factions={faction,faction},decks={{},{}}};L.starter(c,1);return c.decks[1]
 end
 -- A player that knows only what its view shows, and picks random legal inputs.
 local function decide(mirror,seat,rng)
@@ -69,7 +69,7 @@ end)
 test("A snapshot taken after every action continues exactly like an uninterrupted match",function()
   for i=1,24 do
     local f1,f2=L.factions[i%3+1],L.factions[(i+1)%3+1]
-    local d1,d2=deck(f1,20+i),deck(f2,31)
+    local d1,d2=deck(f1),deck(f2)
     local function new() return B.new(d1,d2,{seed=4100+i,player_faction=f1,ai_faction=f2}) end
     local plain,stored=new(),new();local turns=0
     while not plain.finished do
@@ -118,11 +118,11 @@ test("Single player online: complete matches against the computer, three compute
   for i=1,18 do
     local host=Host.new({seed=300+i});local rng=U.rng(900+i)
     local f1,f2=L.factions[i%3+1],L.factions[(i+2)%3+1]
-    local body={op='create',mode='solo',rules=host.rules,player={faction=f1,deck=deck(f1,20+i%12)},
-      ai={faction=f2,deck=i%2==0 and deck(f2,25) or nil,difficulty=i%5==0 and 'easy' or 'normal'}}
+    local body={op='create',mode='solo',rules=host.rules,player={faction=f1,deck=deck(f1)},
+      ai={faction=f2,deck=i%2==0 and deck(f2) or nil,difficulty=i%5==0 and 'easy' or 'normal'}}
     local r=host:game('u1',body);assert(r.ok and r.seat==1 and r.view,r.message)
     local m=host.matches[r.match];assert(m.config.difficulty==(i%5==0 and 'easy' or 'normal'))
-    assert(#m.config.decks[2]==(i%2==0 and 25 or 30),'the computer brings its starter when no deck is sent')
+    assert(#m.config.decks[2]==20,'the computer brings its starter when no deck is sent')
     local mirror=Mirror.new();mirror:apply(r.view);mirror:append_log(r.log)
     local more,guard=r.more,0
     while m.status=='active' do
@@ -159,10 +159,11 @@ end)
 
 test("Two players online: complete matches, hidden hands, and the same result as the local engine",function()
   local prompts,for_other,total=0,0,0
-  for i=1,30 do
+  -- Smaller opening hands need more seeds to cover opponent-owned ability choices.
+  for i=1,120 do
     local host=Host.new({seed=500+i});local rng=U.rng(1700+i)
     local f={L.factions[i%3+1],L.factions[(i+i%2+1)%3+1]}
-    local decks={deck(f[1],20+(i*3)%11),deck(f[2],20+(i*5)%11)}
+    local decks={deck(f[1]),deck(f[2])}
     local seeds={};local core=host.core
     host.core=function(self,req,snap) seeds[#seeds+1]=req.seed;return core(self,req,snap) end
     local r=host:game('ann',{op='create',mode='duel',rules=host.rules,player={faction=f[1],deck=decks[1]}})
@@ -243,16 +244,16 @@ end)
 
 test("Refused requests: wrong turn, stale or repeated moves, strangers, bad rooms and decks",function()
   local host=Host.new({seed=5})
-  local good={faction='Water',deck=deck('Water',30)}
+  local good={faction='Water',deck=deck('Water')}
   local function create(body) body.op='create';body.rules=body.rules or host.rules;return host:game('ann',body) end
   local r=create({mode='duel',rules='older'});assert(not r.ok and r.error=='rules_mismatch' and r.rules==host.rules)
   assert(create({mode='ranked',player=good}).error=='bad_request')
-  for _,bad in ipairs({{faction='Water',deck={}},{faction='Carnival',deck=good.deck},{faction='Water',deck=deck('Fantasy',30)},
+  for _,bad in ipairs({{faction='Water',deck={}},{faction='Carnival',deck=good.deck},{faction='Water',deck=deck('Fantasy')},
       {faction='Water',deck={'Water:1',7}},{faction='Water',deck='all'},{faction='Fantasy',deck={'Fantasy:34','Fantasy:1'}},
       {faction='Water',deck={[1]='Water:1',[3]='Water:2'}},{deck=good.deck}}) do
     r=create({mode='duel',player=bad});assert(not r.ok and r.error=='invalid_deck',json.encode(bad))
   end
-  local tooMany={faction='Water',deck=deck('Water',30)};for _=1,4 do table.insert(tooMany.deck,'Water:1') end
+  local tooMany={faction='Water',deck=deck('Water')};for _=1,4 do table.insert(tooMany.deck,'Water:1') end
   assert(create({mode='duel',player=tooMany}).error=='invalid_deck')
   assert(create({mode='solo',player=good,ai={faction='Nope'}}).error=='invalid_deck')
   assert(create({mode='solo',player=good,ai={faction='Water',deck={'Water:1'}}}).error=='invalid_deck')
@@ -288,8 +289,8 @@ test("Refused requests: wrong turn, stale or repeated moves, strangers, bad room
   local asked
   for attempt=1,400 do
     local h=Host.new({seed=7000+attempt})
-    local c=h:game('ann',{op='create',mode='duel',rules=h.rules,player={faction='Fantasy',deck=deck('Fantasy',40)}})
-    h:game('bob',{op='join',code=c.code,rules=h.rules,player={faction='Fantasy',deck=deck('Fantasy',40)}})
+    local c=h:game('ann',{op='create',mode='duel',rules=h.rules,player={faction='Fantasy',deck=deck('Fantasy')}})
+    h:game('bob',{op='join',code=c.code,rules=h.rules,player={faction='Fantasy',deck=deck('Fantasy')}})
     local mm=h.matches[c.match];local st=Server.restore(mm.snapshot);local hand=st.players[st.active].hand
     for i,u in ipairs(hand) do
       if u.card.id=='Fantasy:5' and #st.players[st.active].deck>=3 then

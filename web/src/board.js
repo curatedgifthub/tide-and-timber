@@ -32,8 +32,13 @@ export function board(match, catalog, metrics, selected) {
     const pl=v.players[p-1], faction=catalog.factions.find(f=>f.id===pl.faction)
     const score=v.finished && v.history.length ? v.history.at(-1).scores[p-1] : metrics.scores[p-1]
     return `<section class="side f-${pl.faction}"><div class="side-head"><div><b>${who(p)}</b> · ${esc(faction.label)} <small>(${esc(pl.name)})</small></div>
-      <b>${score} STR</b></div><div class="piles"><span>${pl.wins} round wins${pl.passed?' · Passed':''}</span><span>Deck ${pl.deck}</span><span>Hand ${pl.hand}</span>${btn('Discard '+pl.discard.length,'pile',p,'text-button')}</div>
-      ${(p===me?[1,2]:[2,1]).map(r=>row(p,r)).join('')}</section>`
+      <b>${score} STR</b></div><div class="piles"><span>${pl.wins} round wins${pl.passed?' · Passed':''}</span><span>Deck ${pl.deck}</span><span>Hand ${pl.hand}</span></div>
+      ${(p===me?[1,2]:[2,1]).map(r=>row(p,r)).join('')}
+      <button class="discard-pile" data-action="pile" data-value="${p}" aria-label="${who(p)} discard pile, ${pl.discard.length} cards">
+        <span class="discard-top">${pl.discard.length ? art(cards[pl.discard.at(-1).c]) : '<span aria-hidden="true">◇</span>'}</span>
+        <span><strong>Discard pile · ${pl.discard.length}</strong><small>${pl.discard.length ? esc(name(cards[pl.discard.at(-1).c]))+' on top · Tap to view all' : 'Empty · Used and defeated cards go here'}</small></span>
+        <span aria-hidden="true">→</span>
+      </button></section>`
   }
   const drawText = draws.map(d => d.cards ? 'You drew '+d.cards.map(c=>name(cards[c.c])).join(', ') : who(d.seat)+' drew '+d.n+' card'+(d.n===1?'':'s')).join(' · ')
   const lastCard = v.last && cards[v.last.c]

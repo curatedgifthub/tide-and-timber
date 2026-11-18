@@ -1,6 +1,7 @@
 -- Temporary resolutions for underspecified cases. Read DECISIONS.md.
 return {
-  starting_hand = 20,
+  starting_hand = 5,
+  deck_size = 20,
   -- Explicit fixed-size scenarios from the original terminal simulator.
   classic = {starting_hand=10, max_hand=12},
   max_activations_per_action = 200,

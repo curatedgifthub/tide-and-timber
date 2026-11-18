@@ -41,7 +41,7 @@ function session(api) {
   match.schedule=()=>{} // Tests drive the production pump on demand.
   return match
 }
-const deck = f => ({faction:f.id, deck:f.starters['30']})
+const deck = f => ({faction:f.id, deck:f.starter})
 try {
   let host=client(), guest=client()
   await host.open({op:'create',mode:'duel',player:deck(catalog.factions[0]),rules:catalog.rules})
@@ -54,6 +54,10 @@ try {
   assert.equal(host.view.seat,1)
   assert.equal(guest.view.seat,2)
   assert.equal(host.view.players[1].cards,undefined)
+  for (const seat of [host,guest]) {
+    assert.equal(seat.view.players[seat.view.seat-1].cards.length,5)
+    assert.equal(seat.view.players[seat.view.seat-1].deck,15)
+  }
   const actor=host.ready?host:guest, other=actor===host?guest:host
   const token=actor.api.read('auth')
   actor.api.save('auth',{...token,expires_at:0})

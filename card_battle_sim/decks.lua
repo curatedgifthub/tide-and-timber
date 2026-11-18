@@ -64,12 +64,8 @@ function D.collection_size(faction)
   if not spec or spec.primary==false then return 0 end
   return #C[faction]+#(spec.neutral_cards or {})
 end
--- max_size: the number of designs available to this faction (defaults to its catalog).
-function D.validate_selection(deck,faction,collection,max_size)
-  local ok,why=D.validate_partial(deck,faction,max_size or D.collection_size(faction),collection)
-  if not ok then return false,why end
-  if #deck<Rules.starting_hand then return false,'Select at least '..Rules.starting_hand..' cards.' end
-  return true
+function D.validate_selection(deck,faction,collection)
+  return D.validate(deck,faction,Rules.deck_size,collection)
 end
 function D.counts(deck)
   local c={};for _,id in ipairs(deck) do c[id]=(c[id] or 0)+1 end;return c

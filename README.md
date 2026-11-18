@@ -17,9 +17,9 @@ The match table shows whether the game server is reachable. Both ways to play ne
 ### Single Player (Online)
 
 1. Choose **Single Player (Online)**. Use the arrows on the two faction portraits to choose your faction and the computer's.
-2. Open **Build your deck**. Click a card to inspect it and use **+** or **−** to select copies. **20-card starter**, **30-card starter** and **All N designs** fill the draft. A Battle Deck holds 20 cards up to the faction's full collection.
-3. The computer brings its faction's 30-card starter unless you build a deck for it (the **Computer** tab in the workshop). **Normal** plays the best move it finds; **Easy** plays any legal card.
-4. **Start online match**. The server shuffles both decks, deals 20 cards each, and plays the computer's turns. You see each computer move one at a time.
+2. Open **Build your deck**. Click a card to inspect it and use **+** or **−** to select copies. Choose exactly 20 cards, use the faction’s **20-card starter**, or select **Random 20**.
+3. The computer brings its faction's 20-card starter unless you build a deck for it (the **Computer** tab in the workshop). **Normal** plays the best move it finds; **Easy** plays any legal card.
+4. **Start online match**. The server shuffles both decks, deals five cards each, and plays the computer's turns. You see each computer move one at a time.
 
 ### Two Players (Online)
 
@@ -33,10 +33,10 @@ A match in progress survives closing the game: the match table offers **Return t
 ### On the battlefield
 
 - Click a hand card. For a Unit, click a gold marker before, between, or after existing Units, or the highlighted space in an empty row. For an Effect, click **Play effect**. Choose any requested targets, positions, trigger order, or deck order in the dialog. Crowded rows have page arrows.
-- Hover or click a card for its rules. The board shows current Strength; the inspector shows printed rank and remaining Health. Consecutive printed ranks activate a chain at length three or more. A Bridge on a rightmost endpoint can link Front left-to-right with Back right-to-left.
+- Hover or click a card for its rules. The board shows current Strength; the inspector shows printed rank and remaining Health. For Water and Fantasy cards, consecutive printed ranks activate a chain at length three or more. A Bridge on a rightmost endpoint can link Front left-to-right with Back right-to-left.
 - **Pass this round** ends your plays for the round and keeps your hand. **End extra plays** declines an additional action without passing. The round ends once both sides pass. The match ends at two round wins or after the third round.
 - Click the round number for scores, a discard count to inspect that pile, and **View all** for the event history. Abilities sometimes ask the *other* player a question (a counter-attack target, a chain to resolve first); the turn label shows who is choosing.
-- There is no automatic drawing; only card abilities draw. A drawn card gets a gold **NEW DRAW** border and the bar at the bottom names it. For the other player's draws the bar shows only how many.
+- The opening turn uses the five-card deal. Every subsequent turn starts by drawing one card if available, including the first turn of a new round. Extra plays share the same turn. Abilities can take your hand above five. A drawn card gets a gold **NEW DRAW** border and the bar at the bottom names it. For the other player's draws the bar shows only how many.
 - **Deck presets** saves your deck, the computer's deck and the play mode into five slots in the LÖVE save directory (on macOS `~/Library/Application Support/LOVE/tide-and-timber/`).
 
 ![A four-card Water chain crossing both rows through Seahorse](docs/battlefield.jpg)
@@ -56,11 +56,12 @@ The left-out entries keep their rules and text in `card_battle_sim/data/cards.lu
 
 ### The Comic deck
 
-The 31 illustrations in `comics/` are the Super faction. 23 of them are Version 1.0 catalog cards matched by theme (for example *Pixel Alloy Guard Mech* is Alloy Guard, *Shattered Vortex Clock* is Time Fracture, *Pixel Grapple Heroine Ascending* is the Bridge Unit Rift Courier, shown as Grapple Heroine). Eight are new designs, and two catalog cards were redesigned as a pair. All of this is in the "Comic edition" block at the end of the Super section of `cards.lua` and `abilities.lua`; edit freely.
+The Comic deck has 31 illustrated designs. Its combinations depend on the characters named on each card. Water and Fantasy retain their numerical chains.
 
 | Cards | What they do |
 | --- | --- |
-| **Dinosaur Dan** (4) + **Dan the Dinosaur** (5) → **Roaring T-Rex** (6) | When the second Dan is deployed while you control the other, a Roaring T-Rex comes straight into play from your draw deck (or else your hand), free, in a row and position you choose. Its Deploy deals 2 damage to every Unit in one opposing row. Placed 4-5-6, the three form a chain and the T-Rex gains +3 Strength. One T-Rex per deck. |
+| **Dinosaur Dan** (4) + **Dan the Dinosaur** (5) → **Roaring T-Rex** (6) | When the second Dan is deployed while you control the other, a Roaring T-Rex comes straight into play from your draw deck (or else your hand), free, in a row and position you choose. Its Deploy deals 2 damage to every Unit in one opposing row. Comic cards use named combinations only. One T-Rex per deck. |
+| **Building Showdown** | Summons one Grapple Hero, Grapple Heroine and Alien Gunner together from your deck or hand into your Front row. Summon whichever are available. Alien Gunner’s Repel also allows retrieval from your discard pile. |
 | **Cosmic Warden** (4 STR, 4 HP) → **Multiverse Phantom** (9 STR, 10 HP) | The Phantom can only be played *onto* a Cosmic Warden you control. It takes the Warden's exact position, deals 3 damage to every opposing Unit and draws a card. The Warden cannot be moved or weakened by the opponent, but it can be killed before the Phantom arrives, and then the Phantom is a dead card. |
 | **Scared Sidekick** (2) and **Brave Sidekick** (5) | Whichever is played second decides the effect. Scared first: it fetches Brave Sidekick from your draw deck (or draws 1); Brave played after it gives Scared +3 Strength and deals 3 damage. Brave first: it shields itself from the next 3 damage; Scared played after it makes both ignore the next opposing damage effect. |
 | **Monochrome Hood** (1), **Monochrome Spy** (2), **Monochrome Vigilante** (3) | *Double Agents*: you deploy them on the **opponent's** battlefield, their Strength counts for the opponent, and the card becomes the opponent's. In return: the Hood puts the top 3 cards of the opposing draw deck into its discard pile; the Spy takes a card of your choice from the opposing discard pile into your hand; the Vigilante swaps one of your Units with an opposing Unit of printed Strength 5 or less (they trade places and controllers). Once in the opponent's discard pile, a Monochrome card can be pulled back by *any* deck's recovery ability and played against you. |

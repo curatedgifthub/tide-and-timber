@@ -34,8 +34,8 @@ local function sha256(text)
 end
 local rules=assert(Rules.version(read,sha256))
 local function player() return Api.new({url=url,key=key,transport=transport}) end
-local function deck(faction,size)
-  local c={factions={faction,faction},decks={{},{}}};L.starter(c,1,size or 30);return c.decks[1]
+local function deck(faction)
+  local c={factions={faction,faction},decks={{},{}}};L.starter(c,1);return c.decks[1]
 end
 local function decide(session,rng)
   local s,q,seat=session.state,session.prompt,session.seat
@@ -78,9 +78,9 @@ end)
 step('Single player: a complete match against the computer',function()
   local rng=U.rng(11)
   local s=Session.new(ann,{pace=0,retry=1,token='live-solo'})
-  s:start_solo({faction='Fantasy',deck=deck('Fantasy',30)},{faction='Super',difficulty='normal'},rules)
+  s:start_solo({faction='Fantasy',deck=deck('Fantasy')},{faction='Super',difficulty='normal'},rules)
   assert(s.phase=='playing',s.error)
-  assert(s.seat==1 and #s.state.players[1].hand==20 and s.state.players[2].hand[1].hidden)
+  assert(s.seat==1 and #s.state.players[1].hand==5 and s.state.players[2].hand[1].hidden)
   local guard=0
   while s.phase=='playing' do
     guard=guard+1;assert(guard<3000,'stuck')
@@ -96,15 +96,15 @@ step('Two players: room code, a complete match, both sides agree',function()
   local rng=U.rng(12)
   local a=Session.new(ann,{poll=0,idle_poll=3,retry=1,token='live-a'})
   local b=Session.new(bob,{poll=0,idle_poll=3,retry=1,token='live-b'})
-  a:open_room({faction='Water',deck=deck('Water',24)},rules)
+  a:open_room({faction='Water',deck=deck('Water')},rules)
   assert(a.phase=='waiting' and #a.code==6,a.error)
-  local wrong=Session.new(cat);wrong:join_room('ZZZZZZ',{faction='Water',deck=deck('Water',24)},rules)
+  local wrong=Session.new(cat);wrong:join_room('ZZZZZZ',{faction='Water',deck=deck('Water')},rules)
   assert(wrong.phase=='failed' and wrong.code_error=='room_not_found')
-  local own=Session.new(ann);own:join_room(a.code,{faction='Water',deck=deck('Water',24)},rules)
+  local own=Session.new(ann);own:join_room(a.code,{faction='Water',deck=deck('Water')},rules)
   assert(own.phase=='failed' and own.code_error=='own_room')
-  b:join_room(a.code:lower(),{faction='Super',deck=deck('Super',26)},rules)
+  b:join_room(a.code:lower(),{faction='Super',deck=deck('Super')},rules)
   assert(b.phase=='playing' and b.seat==2,b.error)
-  local late=Session.new(cat);late:join_room(a.code,{faction='Water',deck=deck('Water',24)},rules)
+  local late=Session.new(cat);late:join_room(a.code,{faction='Water',deck=deck('Water')},rules)
   assert(late.phase=='failed' and late.code_error=='room_full')
   a:update(1);a:update(1);assert(a.phase=='playing' and a.seat==1,'the host sees the guest arrive')
   room=a.match
@@ -176,8 +176,8 @@ end)
 
 step('Leaving: the other player is told, and the match takes no more moves',function()
   local a=Session.new(ann,{poll=0,token='live-c'});local b=Session.new(bob,{poll=0,token='live-d'})
-  a:open_room({faction='Fantasy',deck=deck('Fantasy',20)},rules)
-  b:join_room(a.code,{faction='Fantasy',deck=deck('Fantasy',20)},rules)
+  a:open_room({faction='Fantasy',deck=deck('Fantasy')},rules)
+  b:join_room(a.code,{faction='Fantasy',deck=deck('Fantasy')},rules)
   a:update(1);a:update(1);assert(a.phase=='playing' and b.phase=='playing')
   b:leave()
   for _=1,4 do a:update(5) end

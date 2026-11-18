@@ -34,7 +34,7 @@ local function deck_ok(faction,deck)
     if type(k)~='number' or type(id)~='string' or n>400 then return false,'Malformed deck.' end
   end
   if n~=#deck then return false,'Malformed deck.' end
-  return Decks.validate_selection(deck,faction,Library.owned[faction],Library.size(faction))
+  return Decks.validate_selection(deck,faction,Library.owned[faction])
 end
 
 local function save(s)
@@ -140,9 +140,9 @@ local function create(req)
   end
   local deck=ai.deck
   if type(deck)~='table' or next(deck)==nil then
-    -- No deck chosen for the computer: it brings the 30-card starter of its faction.
+    -- No deck chosen for the computer: it brings the 20-card starter of its faction.
     local draft={factions={ai.faction,ai.faction},decks={{},{}}}
-    Library.starter(draft,2,30);deck=draft.decks[2]
+    Library.starter(draft,2);deck=draft.decks[2]
   end
   ok,why=deck_ok(ai.faction,deck)
   if not ok then return fail('invalid_deck','Computer deck: '..tostring(why)) end

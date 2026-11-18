@@ -1,9 +1,16 @@
 local Chains={}
+local factions={}
+for _,spec in ipairs(require('data.factions')) do factions[spec.id]=spec end
+function Chains.eligible(card)
+  local spec=factions[card.faction]
+  return not spec or spec.numerical_chains~=false
+end
 local function groups(path, seam)
   local found={}
   for start=1,#path do
     local dir=nil
     for stop=start+1,#path do
+      if not Chains.eligible(path[stop-1].card) or not Chains.eligible(path[stop].card) then break end
       local previous=path[stop-1].card.strength
       local delta=path[stop].card.strength-previous
       if math.abs(delta)~=1 then break end
@@ -27,7 +34,8 @@ function Chains.find(player)
   end
   if #front>0 and #back>0 then
     local f=front[#front];local b=back[#back]
-    if (f.card.bridge and not f.disabled or b.card.bridge and not b.disabled) and math.abs(f.card.strength-b.card.strength)==1 then
+    if Chains.eligible(f.card) and Chains.eligible(b.card) and
+      (f.card.bridge and not f.disabled or b.card.bridge and not b.disabled) and math.abs(f.card.strength-b.card.strength)==1 then
       local path={}
       for _,u in ipairs(front) do path[#path+1]=u end
       for i=#back,1,-1 do path[#path+1]=back[i] end

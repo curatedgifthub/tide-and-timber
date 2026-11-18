@@ -1,4 +1,5 @@
 local Cards = require('data.cards')
+local Rules = require('rules')
 local Decks = require('decks')
 -- The playable pool is exactly the set of cards with their own illustration.
 -- A catalog entry without artwork is not part of the game: it never appears in
@@ -32,7 +33,7 @@ for _,faction in ipairs(Decks.factions) do
 end
 
 function Library.collection(faction) return Library.pool[faction] or {} end
--- Maximum Battle Deck size: one of each design in the playable collection.
+-- Number of illustrated designs available in the workshop.
 function Library.size(faction) return #(Library.pool[faction] or {}) end
 
 -- Both ways to play run on the game server. Seat 1 is always this player's own draft;
@@ -60,7 +61,7 @@ function Library.computer_ready(cfg)
 end
 
 function Library.valid(cfg,p)
-  return Decks.validate_selection(cfg.decks[p],cfg.factions[p],Library.owned[cfg.factions[p]],Library.size(cfg.factions[p]))
+  return Decks.validate_selection(cfg.decks[p],cfg.factions[p],Library.owned[cfg.factions[p]])
 end
 
 function Library.edit(cfg,p,id,delta)
@@ -70,15 +71,15 @@ function Library.edit(cfg,p,id,delta)
     return false,"This copy is outside your deck."
   end
   deck[#deck+1]=id
-  local ok,why=Decks.validate_partial(deck,cfg.factions[p],Library.size(cfg.factions[p]),Library.owned[cfg.factions[p]])
+  local ok,why=Decks.validate_partial(deck,cfg.factions[p],Rules.deck_size,Library.owned[cfg.factions[p]])
   if not ok then table.remove(deck) end
   return ok,why
 end
 
 -- A suggested selection is applied only on request. Include the faction's
 -- featured Unit and a mix of printed ranks, Bridge, recovery and combat.
-function Library.starter(cfg,p,size)
-  size=size or 30
+function Library.starter(cfg,p)
+  local size=Rules.deck_size
   local f=cfg.factions[p]
   local deck,seen={},{}
   local spec=Library.specs[f]
@@ -98,10 +99,15 @@ function Library.starter(cfg,p,size)
   cfg.decks[p]=deck
 end
 
-function Library.full(cfg,p)
+function Library.random(cfg,p)
   local f=cfg.factions[p]
   local deck={}
   for _,card in ipairs(Library.collection(f)) do deck[#deck+1]=card.id end
+  for i=#deck,2,-1 do
+    local j=math.random(i)
+    deck[i],deck[j]=deck[j],deck[i]
+  end
+  while #deck>Rules.deck_size do table.remove(deck) end
   cfg.decks[p]=deck
 end
 

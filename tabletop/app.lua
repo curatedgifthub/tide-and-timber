@@ -309,7 +309,7 @@ function App:promptDialog()
     elseif q.kind=="beacon" then
       card=ctx.cards[1].card
       title=v==1 and ("Keep "..card.name.." on top") or ("Send "..card.name.." to the bottom")
-      detail=v==1 and "It stays the next card any ability draws" or "The card below it becomes the next draw"
+      detail=v==1 and "It stays on top for your next draw" or "The card below it becomes the next draw"
     elseif q.kind=="order" then
       local a,b=ctx.cards[1].card,ctx.cards[2].card;if v==2 then a,b=b,a end
       title=a.name.."   →   "..b.name;detail="Next draw first";card=a

@@ -3,6 +3,7 @@ local json = require('online.json')
 local Mirror = require('online.mirror')
 local Battle = require('battle')
 local Chains = require('chains')
+local Placement = require('tabletop.placement')
 
 return function(receiver, payload)
   local view = assert(json.decode(payload or receiver))
@@ -26,7 +27,18 @@ return function(receiver, payload)
   end
   for i, unit in ipairs(state.players[seat].hand) do
     local ok, reason = Battle.playable(state,seat,i)
-    info.hand[i] = {ok=ok, reason=reason, side=Battle.deploy_side(seat,unit.card)}
+    local side=Battle.deploy_side(seat,unit.card)
+    info.hand[i] = {ok=ok, reason=reason, side=side}
+    if ok and unit.uid==view.previewUid and unit.card.type=='Unit' and not unit.card.replaces then
+      info.slots={{},{}}
+      for r,row in ipairs(state.players[side].rows) do
+        for pos=1,#row+1 do
+          local ch=Placement.preview(state.players[side],r,pos,unit.card)
+          info.slots[r][pos]={cross=ch and ch.cross,chain=ch and ch.length,
+            bonus=Placement.bonus(unit.card,r),endpoint=unit.card.bridge and pos==#row+1}
+        end
+      end
+    end
   end
   return json.encode(info)
 end

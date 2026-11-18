@@ -25,7 +25,7 @@ local function same(a,b,path)
   return true
 end
 local function deck(faction)
-  local c={factions={faction,faction},decks={{},{}}};L.starter(c,1);return c.decks[1]
+  local c={factions={faction,faction},decks={{},{}}};L.starter(c,1,20);return c.decks[1]
 end
 -- A player that knows only what its view shows, and picks random legal inputs.
 local function decide(mirror,seat,rng)
@@ -122,7 +122,7 @@ test("Single player online: complete matches against the computer, three compute
       ai={faction=f2,deck=i%2==0 and deck(f2) or nil,difficulty=i%5==0 and 'easy' or 'normal'}}
     local r=host:game('u1',body);assert(r.ok and r.seat==1 and r.view,r.message)
     local m=host.matches[r.match];assert(m.config.difficulty==(i%5==0 and 'easy' or 'normal'))
-    assert(#m.config.decks[2]==20,'the computer brings its starter when no deck is sent')
+    assert(#m.config.decks[2]==(i%2==0 and 20 or 30),'the computer brings its starter when no deck is sent')
     local mirror=Mirror.new();mirror:apply(r.view);mirror:append_log(r.log)
     local more,guard=r.more,0
     while m.status=='active' do

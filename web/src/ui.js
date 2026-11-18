@@ -9,9 +9,9 @@ export function btn(label, action, value = '', style = '', disabled = false) {
 export function art(card) {
   return `<img loading="lazy" decoding="async" src="${esc(card.art)}" alt="">`
 }
-export function cardFace(card, action, value, stats = '', selected = false, flags = '') {
+export function cardFace(card, action, value, stats = '', selected = false, flags = '', hp = null) {
   return `<button class="card-face f-${esc(card.faction)} ${selected?'selected':''}" data-action="${esc(action)}" data-value="${esc(value)}">
-    <span class="card-image">${art(card)}<span class="rank">${esc(card.strength ?? '✦')}</span>${flags ? '<small class="flag">'+esc(flags)+'</small>' : ''}</span>
+    <span class="card-image">${art(card)}<span class="rank" title="Printed rank">${hp!=null?'R':''}${esc(card.strength ?? '✦')}</span>${hp!=null ? '<b class="unit-hp'+(hp<card.health?' wounded':'')+'" aria-label="Health '+esc(hp)+' of '+esc(card.health)+'">'+esc(hp)+' HP</b>' : ''}${flags ? '<small class="flag">'+esc(flags)+'</small>' : ''}</span>
     <strong>${esc(name(card))}</strong><small>${esc(stats || (card.type === 'Unit' ? card.health+' HP · Unit' : 'Effect'))}</small></button>`
 }
 export function inspect(card, unit, metrics) {

@@ -43,13 +43,17 @@ function session(api) {
 }
 const deck = f => ({faction:f.id, deck:f.starter})
 try {
+  for (const f of catalog.factions) {
+    assert.equal(f.starter.length,30)
+    assert.equal(f.smallStarter.length,20)
+  }
   let host=client(), guest=client()
-  await host.open({op:'create',mode:'duel',player:{faction:catalog.factions[0].id, deck:catalog.factions[0].largeStarter},rules:catalog.rules})
+  await host.open({op:'create',mode:'duel',player:{faction:catalog.factions[0].id, deck:catalog.factions[0].starter},rules:catalog.rules})
   assert.equal(host.code.length,6)
   host=session(host.api)
   await host.resume()
   assert.equal(host.status,'waiting')
-  await guest.open({op:'join',code:host.code,player:deck(catalog.factions[1]),rules:catalog.rules})
+  await guest.open({op:'join',code:host.code,player:{faction:catalog.factions[1].id, deck:catalog.factions[1].smallStarter},rules:catalog.rules})
   await host.tick()
   assert.equal(host.view.seat,1)
   assert.equal(guest.view.seat,2)

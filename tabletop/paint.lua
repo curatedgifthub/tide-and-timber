@@ -150,8 +150,8 @@ function P.card(card,x,y,w,h,opt)
     P.box(ax,ay+sz,sz,15,P.black)
     P.one("R"..card.strength,ax,ay+sz,sz,11,P.gold,"bold","center")
   end
-  if opt.hp and opt.hp~=card.health then
-    P.box(ax+aw-23,ay,23,18,P.black);P.one(opt.hp.."♥",ax+aw-23,ay,23,13,P.red,"bold","center")
+  if opt.hp~=nil then
+    P.box(ax+aw-42,ay,42,20,P.black);P.one(opt.hp.." HP",ax+aw-42,ay,42,15,opt.hp<card.health and P.red or P.textColor,"bold","center")
   end
   local ty=y+h-foot
   P.one(card.display_name or card.name,x+5,ty+(tiny and 1 or 4),w-10,tiny and 13 or 18,P.textColor,"serif","center")

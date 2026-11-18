@@ -79,7 +79,7 @@ end
 -- A suggested selection is applied only on request. Include the faction's
 -- featured Unit and a mix of printed ranks, Bridge, recovery and combat.
 function Library.starter(cfg,p,size)
-  size=size or Rules.min_deck_size
+  size=size or Rules.max_deck_size
   assert(size>=Rules.min_deck_size and size<=Rules.max_deck_size and size%1==0)
   local f=cfg.factions[p]
   local deck,seen={},{}

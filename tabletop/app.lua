@@ -18,6 +18,7 @@ end
 function App.new(opts)
   opts=opts or {}
   local self=setmetatable({cfg=Lib.new(),screen="menu",page=1,filter="All",profile=opts.profile or ""},App)
+  for p=1,2 do Lib.starter(self.cfg,p) end
   local signIn="online-session"..self.profile..".json"
   self.matchFile="online-match"..self.profile..".txt"
   self.transport=Transport.new(opts.http)
@@ -106,7 +107,8 @@ function App:cycleFaction(p,delta)
   self.drafts[p][f]=self.cfg.decks[p]
   local nextFaction=Lib.factions[(i-1+delta)%#Lib.factions+1]
   self.cfg.factions[p]=nextFaction
-  self.cfg.decks[p]=self.drafts[p][nextFaction] or {}
+  if self.drafts[p][nextFaction] then self.cfg.decks[p]=self.drafts[p][nextFaction]
+  else Lib.starter(self.cfg,p) end
 end
 function App:edit(c,delta)
   self.inspected=c
@@ -175,7 +177,7 @@ function App:frame(draws)
     for id,value in pairs(now) do if self.before[id]~=value then self.flash[id]=true end end
     self.flashTime=1.6
   end
-  self.before=now;self.selected=nil;self.promptPage=1
+  self.before=now;self.selected=nil;self.previewUnit=nil;self.promptPage=1
   if s.last_played~=self.lastPlayed then self.lastPlayed=s.last_played;self.inspected=s.last_played end
   for _,event in ipairs(draws) do
     self.drawReceipt=event

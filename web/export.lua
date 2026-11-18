@@ -11,6 +11,7 @@ local catalog = {
   minDeckSize = rules.min_deck_size,
   maxDeckSize = rules.max_deck_size,
   opening = rules.starting_hand,
+  rowGuide = require("tabletop.placement").guide,
   cards = json.object({}),
   factions = {},
 }
@@ -26,9 +27,9 @@ for _, id in ipairs(library.factions) do
     emblem = spec.emblem, color = spec.color, ink = spec.ink, paper = spec.paper,
     cards = {}, limits = library.owned[id], starter = draft.decks[1],
   }
-  library.starter(draft, 1, rules.max_deck_size)
+  library.starter(draft, 1, rules.min_deck_size)
   assert(library.valid(draft, 1))
-  faction.largeStarter = draft.decks[1]
+  faction.smallStarter = draft.decks[1]
   catalog.factions[#catalog.factions + 1] = faction
   for _, card in ipairs(library.collection(id)) do
     faction.cards[#faction.cards+1] = card.id

@@ -15,8 +15,9 @@ from publish_rules import bundle
 def copy_rules(site, modules):
     # Only the dependencies of the public mirror, score and placement helpers.
     required = ("util", "rules", "data.cards", "data.factions", "abilities",
-                "chains", "decks", "battle", "online.json", "online.mirror")
+                "chains", "decks", "battle", "online.json", "online.mirror", "tabletop.placement")
     modules["online.mirror"] = (ROOT / "online/mirror.lua").read_text(encoding="utf-8")
+    modules["tabletop.placement"] = (ROOT / "tabletop/placement.lua").read_text(encoding="utf-8")
     with (site / "public-rules.lua").open("w", encoding="utf-8") as script:
         for name in required:
             script.write(f'package.preload["{name}"] = function(...)\n{modules[name]}\nend\n')

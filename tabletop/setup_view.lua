@@ -27,7 +27,7 @@ local function factionPlate(app,p,x)
   P.button("faction-prev-"..p,"‹",x+w-95,y+305,32,35,function() app:cycleFaction(p,-1) end)
   P.button("faction-next-"..p,"›",x+w-55,y+305,32,35,function() app:cycleFaction(p,1) end)
   local count=#cfg.decks[p]
-  local tagged=(p==2 and count==0) and "20-card starter" or count.." tagged"
+  local tagged=(p==2 and count==0) and "30-card starter" or count.." tagged"
   local title="Browse "..Lib.size(faction).." designs   ·   "..tagged
   P.button("edit-"..p,title,x,y+h+14,w,43,function() app:builder(p) end,"accent")
 end
@@ -147,7 +147,7 @@ function View.builder(app)
   P.text("Page "..app.page.." of "..pages,88,711,16,P.muted)
   P.button("next","›",195,703,40,36,function() app.page=app.page+1 end,nil,app.page<pages)
   P.button("starter-30","30-card starter",440,703,149,36,function() Lib.starter(cfg,p,Rules.max_deck_size) end)
-  P.button("starter-20","20-card starter",282,703,149,36,function() Lib.starter(cfg,p) end)
+  P.button("starter-20","20-card starter",282,703,149,36,function() Lib.starter(cfg,p,Rules.min_deck_size) end)
   P.button("random","Random 20",598,703,151,36,function() Lib.random(cfg,p) end,"accent")
   P.button("clear","Clear deck",758,703,112,36,function() cfg.decks[p]={} end)
   local x,w=901,344
@@ -176,7 +176,7 @@ function View.builder(app)
     local automatic=n==2 and count==0
     ready=ready and (ok or automatic)
     P.text(seatName(cfg,n).."  ·  "..Lib.label(cfg.factions[n]),x+18,616+(n-1)*21,16,P.textColor)
-    local status=automatic and "20-card starter" or ok and (count.." tagged  /  "..(count-Rules.starting_hand).." in draw deck") or (count.." tagged / need "..Rules.min_deck_size.."–"..Rules.max_deck_size)
+    local status=automatic and "30-card starter" or ok and (count.." tagged  /  "..(count-Rules.starting_hand).." in draw deck") or (count.." tagged / need "..Rules.min_deck_size.."–"..Rules.max_deck_size)
     P.one(status,x+146,616+(n-1)*21,182,16,(ok or automatic) and spec.color or P.muted,"bold","right")
   end
   if ready then P.button("done","Deck ready   →",x+18,675,w-36,46,function() app.screen="menu" end,"gold")

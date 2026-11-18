@@ -14,25 +14,39 @@ export function board(match, catalog, metrics, selected) {
     v.prompt ? (v.prompt.actor===me ? 'Your ability choice' : who(v.prompt.actor)+' is choosing') :
     match.mine ? 'Your turn' : who(foe)+(v.controllers[foe-1]==='AI'?' is playing…':'’s turn')
   const title = `<div class="heading"><div><p class="eyebrow">${v.mode==='solo'?'Single player':'Two players'} · ${match.code?'Room '+esc(match.code):'Online match'}</p><h1>Battlefield</h1></div>
-    <div class="actions">${btn('Round '+v.round+' / 3','scores')}${closed ? btn('Match table','table') : btn('Leave match','leave','','quiet',match.busy)}</div></div>`
+    <div class="actions">${btn('Rows & Bridge','row-guide')}${btn('Round '+v.round+' / 3','scores')}${closed ? btn('Match table','table') : btn('Leave match','leave','','quiet',match.busy)}</div></div>`
   function row(p, r) {
     const units = v.players[p-1].rows[r-1], markers = placing && p === legal.side
-    const slot = pos => btn(units.length ? '+' : '+ Deploy here', 'slot', r+','+pos, 'slot')
-      .replace('<button ', `<button aria-label="Deploy to ${who(p)} ${rowName(r)} position ${pos}" `)
+    const slot = pos => {
+      const preview=metrics.slots?.[r-1]?.[pos-1] || {}
+      const label=preview.cross?'Bridge chain '+preview.chain:preview.endpoint?'Bridge end':
+        preview.chain?'Chain '+preview.chain:''
+      const hint=[label,preview.bonus].filter(Boolean).join(' · ')
+      return btn(hint || (units.length?'+':'+ Deploy here'),'slot',r+','+pos,'slot'+(hint?' annotated':''))
+        .replace('<button ', `<button aria-label="Deploy to ${who(p)} ${rowName(r)} position ${pos}${hint?' · '+hint:''}" `)
+    }
     const content = units.map((u,i) => {
       const stat = metrics.units[u.u]
       return (markers ? slot(i+1) : '') + cardFace(cards[u.c], 'unit', u.u,
-        stat.strength+' STR · '+u.hp+' HP', false, stat.chain ? 'Chain '+stat.chain : '')
+        stat.strength+' STR', false, stat.cross ? 'Bridge chain' : stat.chain ? 'Chain '+stat.chain : cards[u.c].bridge && !u.dis ? 'Bridge' : '', u.hp)
     }).join('') + (markers ? slot(units.length+1) : '')
     const total = units.reduce((n,u)=>n+metrics.units[u.u].strength,0)
     return `<div class="lane ${markers?'placing':''}"><div class="row-name"><strong>${rowName(r)}</strong><small>${total} STR</small></div>
       <div class="row-cards scroll" data-scroll="lane-${p}-${r}">${content || '<span class="empty">Empty row</span>'}</div></div>`
+  }
+  function markersHint(p) {
+    if (!placing || p!==legal.side) return ''
+    const text=picked.bridge?'Bridge joins the two right ends. Continue a run of 3 or more printed ranks, stepping up or down by one.':
+      metrics.slots?.[1]?.[0]?.bonus?'Back row bonus · '+metrics.slots[1][0].bonus:
+      'Both rows score. Units in the same row can be hit together.'
+    return '<p class="placement-note">'+esc(text)+'</p>'
   }
   function side(p) {
     const pl=v.players[p-1], faction=catalog.factions.find(f=>f.id===pl.faction)
     const score=v.finished && v.history.length ? v.history.at(-1).scores[p-1] : metrics.scores[p-1]
     return `<section class="side f-${pl.faction}"><div class="side-head"><div><b>${who(p)}</b> · ${esc(faction.label)} <small>(${esc(pl.name)})</small></div>
       <b>${score} STR</b></div><div class="piles"><span>${pl.wins} round wins${pl.passed?' · Passed':''}</span><span>Deck ${pl.deck}</span><span>Hand ${pl.hand}</span></div>
+      ${markersHint(p)}
       ${(p===me?[1,2]:[2,1]).map(r=>row(p,r)).join('')}
       <button class="discard-pile" data-action="pile" data-value="${p}" aria-label="${who(p)} discard pile, ${pl.discard.length} cards">
         <span class="discard-top">${pl.discard.length ? art(cards[pl.discard.at(-1).c]) : '<span aria-hidden="true">◇</span>'}</span>

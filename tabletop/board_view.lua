@@ -6,14 +6,7 @@ local V={}
 -- The battlefield is always drawn from the player's own seat: their rows and hand at the
 -- bottom, the other side on top. The state is the mirror of the server's view, so the
 -- other hand and both draw decks are only counts.
-local function slotPreview(player,r,pos,card)
-  local clone={rows={{},{}}}
-  for ri,row in ipairs(player.rows) do for i,u in ipairs(row) do clone.rows[ri][i]=u end end
-  local unit={card=card}
-  table.insert(clone.rows[r],pos,unit)
-  local ch=Chains.qualify(clone,unit,3,false)
-  return ch and ("Chain "..ch.length..(ch.cross and " across rows" or " · "..ch.direction)) or nil
-end
+local Placement=require('tabletop.placement')
 -- The hand card the player has picked up, if it is a Unit that still needs a position.
 local function picked(app)
   local m=app.match
@@ -39,8 +32,16 @@ local function row(app,p,r,y,chains)
   P.text(score.." STR",x+15,y+59,13,P.muted,"bold")
   P.line(x+94,y+9,x+94,y+79,P.rule)
   local left=x+119;local available=w-145
+  if placing and app.previewUnit~=unit then
+    app.previewUnit,app.previews=unit,{{},{}}
+    for ri,lane in ipairs(pl.rows) do for i=1,#lane+1 do
+      app.previews[ri][i]=Placement.preview(pl,ri,i,unit.card)
+    end end
+  end
   local function hint(i)
-    local preview=slotPreview(pl,r,i,unit.card)
+    local ch=app.previews[r][i]
+    local preview=ch and (ch.cross and "Bridge chain " or "Chain ")..ch.length or Placement.bonus(unit.card,r)
+    if not preview and unit.card.bridge and i==#cards+1 then preview="Bridge end" end
     if gift then return "Position "..i.."   ·   "..(preview and "Gives the other side a "..preview or unit.card.name.." joins the other side") end
     return "Position "..i.."   ·   "..(preview or "Deploy "..unit.card.name)
   end
@@ -48,7 +49,9 @@ local function row(app,p,r,y,chains)
     if placing then
       local hot=P.inside(left,y,available,h)
       P.box(left,y+9,available-5,h-18,spec.color,hot and .16 or .05)
-      P.text(gift and "+   Send your agent here" or "+   Deploy here",left,y+30,20,hot and P.bright or P.gold,"serif",available,"center")
+      local ch=app.previews[r][1]
+      local target=ch and ch.cross and "+   Bridge chain "..ch.length or unit.card.bridge and "+   Bridge end" or Placement.bonus(unit.card,r)
+      P.text(target or (gift and "+   Send your agent here" or "+   Deploy here"),left,y+30,20,hot and P.bright or P.gold,"serif",available,"center")
       if hot then app.placeHint=hint(1) end
       P.hit("slot-"..key.."-1",left,y,available,h,function() app:action({type="play",index=app.selected,row=r,pos=1}) end)
     else
@@ -68,8 +71,9 @@ local function row(app,p,r,y,chains)
         P.line(xx-18,y+44,xx-2,y+44,spec.color)
         P.diamond(xx-10,y+44,3,spec.color,true)
       end
-      if i==#cards and app.bridgeEnds[u] then
-        P.box(xx+cw-40,y+5,40,13,spec.ink);P.one("BRIDGE",xx+cw-39,y+4,39,10,P.gold,"bold","center")
+      if app.bridgeEnds[u] or u.card.bridge and not u.disabled then
+        local label=app.bridgeEnds[u] and "LINKED" or "BRIDGE"
+        P.box(xx+cw-44,y+42,44,14,spec.ink);P.one(label,xx+cw-44,y+42,44,11,P.gold,"bold","center")
       end
       P.hit("unit-"..u.uid,xx,y+4,cw,80,function() app.inspected=u end,
         function() app.hovered=u end)
@@ -79,6 +83,11 @@ local function row(app,p,r,y,chains)
         local xx=left-7+(i-start)*pitch
         local hot=P.inside(xx,y+3,17,82);P.box(xx+6,y+8,hot and 4 or 2,h-16,P.gold,hot and 1 or .55)
         P.diamond(xx+7,y+44,hot and 8 or 5,P.gold,true)
+        local ch=app.previews[r][i]
+        local label=ch and ch.cross and "LINK" or unit.card.bridge and i==#cards+1 and "END"
+        if label then
+          P.one(label,xx-2,y+58,22,10,P.gold,"bold","center")
+        end
         if hot then app.placeHint=hint(i) end
         P.hit("slot-"..key.."-"..i,xx,y+3,17,82,function() app:action({type="play",index=app.selected,row=r,pos=i}) end)
       end
@@ -187,6 +196,9 @@ function V.draw(app)
   P.header("Battlefield")
   P.one(Lib.modes[m.mode=="duel" and 2 or 1].name..(m.code and "   ·   Room "..m.code or ""),455,29,268,13,P.muted,"bold","right")
   P.button("rounds","Round "..s.round.." / 3",738,18,140,36,function() app:rounds() end)
+  P.button("row-guide","Rows & Bridge",884,18,147,36,function()
+    app:list("Rows & Bridge","Choose where to deploy a unit.",Placement.guide)
+  end)
   P.button("match-menu","Match menu",1044,18,209,36,function() app:matchMenu() end)
   scoreBar(app,foe,34);scoreBar(app,me,535)
   P.one("vs",432,95,57,25,P.gold,"italic","center")
@@ -221,7 +233,9 @@ function V.draw(app)
     or chosen and (chosen.card.type=="Effect" and "Choose Play effect to resolve."
       or chosen.card.replaces and "Choose Play onto "..Lib.cards.by_id[chosen.card.replaces].name.." to resolve."
       or chosen.card.agent and "Choose a gold marker on the opposing battlefield."
-      or "Choose a gold insertion marker.")
+      or chosen.card.bridge and "Place at a right end to link Front and Back."
+      or Placement.bonus(chosen.card,2) and "Back row bonus · "..Placement.bonus(chosen.card,2)
+      or "Both rows score. Choose a gold marker.")
     or "Select a card to play."
   local perPage=app.handPageSize
   local pages=math.max(1,math.ceil(#hand/perPage))

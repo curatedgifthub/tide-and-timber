@@ -12,7 +12,7 @@ local U=require('util')
 local cases={}
 local function test(label,fn) cases[#cases+1]={label,fn} end
 local function deck(faction)
-  local c={factions={faction,faction},decks={{},{}}};L.starter(c,1);return c.decks[1]
+  local c={factions={faction,faction},decks={{},{}}};L.starter(c,1,20);return c.decks[1]
 end
 -- net.lose_request / net.lose_reply: how many of the next requests to drop on each side.
 local function network(host)

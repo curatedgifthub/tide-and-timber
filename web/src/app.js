@@ -26,8 +26,18 @@ const ready = s => valid(s) && s.deck.length >= catalog.minDeckSize && s.deck.le
 const deckRange = () => catalog.minDeckSize+'–'+catalog.maxDeckSize
 function loadDraft() {
   const saved = api.read('draft')
-  if (saved?.seats?.length === 2 && saved.seats.every(valid) && ['solo','duel'].includes(saved.mode)) return saved
-  return {mode:'solo', difficulty:'normal', seats:[defaultSeat('Fantasy'),defaultSeat('Water')]}
+  if (saved?.seats?.length === 2 && saved.seats.every(valid) && ['solo','duel'].includes(saved.mode)) {
+    if (!saved.starterVersion) {
+      for (const s of saved.seats) {
+        const previous=faction(s.faction).smallStarter
+        if (s.deck.length===previous.length && previous.every((id,i)=>s.deck[i]===id)) s.deck=[...faction(s.faction).starter]
+      }
+      saved.starterVersion=2
+      api.save('draft',saved)
+    }
+    return saved
+  }
+  return {starterVersion:2, mode:'solo', difficulty:'normal', seats:[defaultSeat('Fantasy'),defaultSeat('Water')]}
 }
 function message(text) {
   const toast = document.querySelector('#toast')
@@ -166,6 +176,9 @@ async function dispatch(action,value) {
   if (action==='reset-auth') {
     api.save('auth',null);api.save('match',null);dialog.close();return checkHealth()
   }
+  if (action==='row-guide') return modal('Rows & Bridge',catalog.rowGuide.map(({title,detail})=>
+    '<h3>'+esc(title)+'</h3><p>'+esc(detail)+'</p>').join('')+
+    '<div class="bridge-example" aria-label="Front: Minnow rank 1, Seahorse rank 2. Follow the bridge to rank 3 at the right end of Back."><b>Front</b><span>1 · Minnow</span><span>2 · Seahorse</span><b>Back</b><span class="example-end">↓ 3</span></div>')
   if (action==='resume') {error='';return match.resume()}
   if (action==='mode' || action==='difficulty') {draft[action]=value;error='';return saveDraft()}
   if (action==='faction') {
@@ -185,7 +198,7 @@ async function dispatch(action,value) {
         pool[j]=card
       }
       seat().deck=pool.slice(0,catalog.minDeckSize)
-    } else seat().deck=value==='clear'?[]:[...(value==='30'?f.largeStarter:f.starter)]
+    } else seat().deck=value==='clear'?[]:[...(value==='20'?f.smallStarter:f.starter)]
     return saveDraft()
   }
   if (action==='plus' || action==='minus') {
@@ -232,6 +245,7 @@ async function dispatch(action,value) {
     const u=myHand.find(u=>String(u.u)===value)
     if (!match.ready || !u || v.prompt) return
     selected=u.u;dialog.close()
+    if (cards()[u.c].type==='Unit' && !cards()[u.c].replaces) metrics=JSON.parse(derive(JSON.stringify({...v,previewUid:u.u})))
     if (cards()[u.c].type==='Effect'||cards()[u.c].replaces) return play()
     render();root.querySelector('.placing')?.scrollIntoView({block:'center',behavior:'smooth'});return
   }

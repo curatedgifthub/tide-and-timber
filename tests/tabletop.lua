@@ -11,7 +11,7 @@ local function test(label,fn) cases[#cases+1]={label,fn} end
 local function cfg()
   -- Both seats computer-controlled, for matches run through tabletop.match.
   local c=L.new();c.controllers={"AI","AI"}
-  L.starter(c,1);L.starter(c,2);return c
+  L.starter(c,1,20);L.starter(c,2,20);return c
 end
 -- Every selected copy exists exactly once. Ownership is fixed, except that a Double Agent
 -- (card.agent) becomes the property of the player it is deployed against.
@@ -72,7 +72,7 @@ test("Explicit editable collections, copy limits and 20–30 tagged cards",funct
   assert(not L.edit(c,2,'Water:31',1))
   for _,f in ipairs(L.factions) do
     c.factions[1]=f
-    L.starter(c,1);assert(#c.decks[1]==20 and L.valid(c,1))
+    L.starter(c,1,20);assert(#c.decks[1]==20 and L.valid(c,1))
     local pool=L.collection(f)
     local i=#pool
     for n=21,30 do
@@ -364,6 +364,20 @@ test("Showdown retrieves available characters together and Repel only recovers G
     end
   end
 end)
+test("Placement previews use unmodified ranks and only link the right ends",function()
+  local preview=require('tabletop.placement').preview
+  local s=M.new(cfg(),13).state
+  local pl=s.players[1]
+  local minnow=unit(s,1,'Water:2',1);minnow.mod=4
+  local seahorse=unit(s,1,'Water:21',1)
+  local three=L.cards.by_id['Water:12']
+  local ch=assert(preview(pl,2,1,three))
+  assert(ch.cross and ch.length==3 and #pl.rows[2]==0,"preview must leave the board untouched")
+  seahorse.disabled=true;assert(not preview(pl,2,1,three))
+  seahorse.disabled=false
+  unit(s,1,'Water:7',1)
+  assert(not preview(pl,2,1,three),"a Bridge in the middle cannot link the rows")
+end)
 test("Comic cards never form numerical chains, including in another faction's rows",function()
   local s=M.new(cfg(),13).state
   for p=1,2 do s.players[p].rows={{},{}} end
@@ -381,7 +395,7 @@ test("Comic cards never form numerical chains, including in another faction's ro
 end)
 test("Comic edition: Dinosaur trio, Warden and Phantom, Sidekick order, Monochrome double agents",function()
   local function fresh()
-    local c=cfg();c.factions={"Super","Fantasy"};L.starter(c,1);L.starter(c,2)
+    local c=cfg();c.factions={"Super","Fantasy"};L.starter(c,1,20);L.starter(c,2,20)
     local m=M.new(c,31);local s=m.state;s.active=1;s.plays_left=1;s.extra_turn=nil
     for p=1,2 do local pl=s.players[p];pl.rows={{},{}};pl.hand={};pl.deck={};pl.discard={};pl.passed=false end
     s.chooser=function(_,_,_,options) return #options end
@@ -472,7 +486,7 @@ test("Comic edition: Dinosaur trio, Warden and Phantom, Sidekick order, Monochro
   assert(B.play(s,1,1,1,1))
   assert(not brave.negate_damage and not scared.negate_damage,"an opposing Sidekick does not count as your partner")
 
-  -- Monochrome Spy: deployed on the opposing battlefield, becomes the opponent's card.
+  -- Spy: deployed on the opposing battlefield, becomes the opponent's card.
   m,s=fresh();pl,foe=s.players[1],s.players[2]
   local spy=unit(s,1,'Super:78');pl.hand={spy,unit(s,1,'Super:12'),unit(s,1,'Super:12')}
   local loot=unit(s,2,'Fantasy:40');foe.discard={unit(s,2,'Fantasy:1'),loot};foe.hand={unit(s,2,'Fantasy:1'),unit(s,2,'Fantasy:39')}
@@ -487,12 +501,12 @@ test("Comic edition: Dinosaur trio, Warden and Phantom, Sidekick order, Monochro
   assert(foe.hand[#foe.hand]==spy,"Fantasy recovery returns the Monochrome Unit")
   s.active=2;s.plays_left=1;assert(B.play(s,2,#foe.hand,2,1))
   ss,sr=B.position(s,spy);assert(ss==1 and sr==2 and spy.owner==1,"played back, it lands on the first player's battlefield")
-  -- Monochrome Hood: the top three cards of the opposing draw deck go to its discard pile.
+  -- Hood: the top three cards of the opposing draw deck go to its discard pile.
   m,s=fresh();pl,foe=s.players[1],s.players[2]
   local d1,d2,d3,d4=unit(s,2,'Fantasy:1'),unit(s,2,'Fantasy:2'),unit(s,2,'Fantasy:3'),unit(s,2,'Fantasy:4')
   foe.deck={d1,d2,d3,d4};pl.hand={unit(s,1,'Super:77'),unit(s,1,'Super:12')}
   assert(B.play(s,1,1,2,1));assert(#foe.deck==0 and foe.hand[#foe.hand]==d1 and #foe.discard==3 and foe.discard[1]==d4)
-  -- Monochrome Vigilante: trade one of your Units for an opposing one (printed 5 or less, movable).
+  -- Vigilante: trade one of your Units for an opposing one (printed 5 or less, movable).
   m,s=fresh();pl,foe=s.players[1],s.players[2]
   local weak,strong=unit(s,1,'Super:2',1),unit(s,1,'Super:30',1)
   local five,treant,giant=unit(s,2,'Fantasy:41',1),unit(s,2,'Fantasy:48',1),unit(s,2,'Fantasy:64',2)
@@ -507,7 +521,7 @@ test("Comic edition: Dinosaur trio, Warden and Phantom, Sidekick order, Monochro
   B.damage(s,2,five,99);assert(foe.discard[#foe.discard]==five,"a traded Unit still returns to its owner's discard pile")
   -- The computer plays every new card to a finish from both seats.
   for seed=1,12 do
-    local c=cfg();c.factions={seed%2==0 and "Super" or "Water","Super"};L.starter(c,1);L.starter(c,2)
+    local c=cfg();c.factions={seed%2==0 and "Super" or "Water","Super"};L.starter(c,1,20);L.starter(c,2,20)
     local match=M.new(c,900+seed);local turns=0
     while not match.state.finished do assert(match:act({type='ai'}));integrity(match,c);turns=turns+1;assert(turns<200) end
   end

@@ -140,7 +140,7 @@ local function create(req)
   end
   local deck=ai.deck
   if type(deck)~='table' or next(deck)==nil then
-    -- No deck chosen for the computer: it brings the 20-card starter of its faction.
+    -- No deck chosen for the computer: it brings the 30-card starter of its faction.
     local draft={factions={ai.faction,ai.faction},decks={{},{}}}
     Library.starter(draft,2);deck=draft.decks[2]
   end

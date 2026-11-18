@@ -1,4 +1,5 @@
 -- Virtual tabletop coordinates. The same transform is used for pointer input.
+local Text=require('tabletop.card_text')
 local Lib=require('tabletop.library')
 local G=love.graphics
 local P={
@@ -96,9 +97,7 @@ function P.art(card,x,y,w,h)
   else
     local cy=y+h/2
     local size=math.min(w,h)>90 and 17 or 12
-    P.box(x+w*.06,cy-4,w*.88,size*2+5,P.red)
-    P.one("ART MISSING",x+3,cy-4,w-6,size,P.black,"bold","center")
-    P.one(card.id,x+3,cy+size-2,w-6,size-2,P.black,"sans","center")
+    P.one("Art unavailable",x+3,cy-size/2,w-6,size,P.dark,"bold","center")
   end
 end
 -- Ruled fields and engraved rings give the original sprites a common print frame.
@@ -133,33 +132,29 @@ function P.card(card,x,y,w,h,opt)
   opt=opt or {}
   local spec=Lib.specs[card.faction]
   local tiny=h<120
-  local foot=tiny and 20 or math.max(30,math.floor(h*.24))
-  local lip=tiny and 2 or 4
+  local tags={}
+  if opt.linked then tags[#tags+1]="Bridge chain"
+  else
+    if card.bridge and not opt.disabled then tags[#tags+1]="Bridge" end
+    if opt.chain then tags[#tags+1]="Chain" end
+  end
+  if opt.spent then tags[#tags+1]="Attack used" end
+  if opt.fresh then tags[#tags+1]="New draw" end
+  local nameHeight=tiny and 14 or 23
+  local statHeight=tiny and 14 or 18
+  local tagHeight=#tags>0 and (tiny and 13 or 16) or 0
+  local footer=nameHeight+statHeight+tagHeight+(tiny and 4 or 8)
   local edge=opt.selected and P.bright or opt.chain and spec.color or P.rule
   P.box(x+2,y+3,w,h,P.black,.7);P.box(x,y,w,h,spec.ink);P.border(x,y,w,h,edge)
-  local ax,ay,aw,ah=x+lip,y+lip,w-2*lip,h-foot-lip
-  P.plate(spec,ax,ay,aw,ah)
-  P.art(card,ax+3,ay+3,aw-6,ah-6)
-  local sz=tiny and 18 or 24
-  P.box(ax,ay,sz,sz,spec.ink)
-  if card.strength then
-    P.one(opt.strength or card.strength,ax,ay+1,sz,tiny and 15 or 19,
-      opt.strength and opt.strength~=card.strength and P.bright or P.textColor,"bold","center")
-  else P.diamond(ax+sz/2,ay+sz/2,sz*.23,P.gold) end
-  if opt.strength and opt.strength~=card.strength then
-    P.box(ax,ay+sz,sz,15,P.black)
-    P.one("R"..card.strength,ax,ay+sz,sz,11,P.gold,"bold","center")
-  end
-  if opt.hp~=nil then
-    P.box(ax+aw-42,ay,42,20,P.black);P.one(opt.hp.." HP",ax+aw-42,ay,42,15,opt.hp<card.health and P.red or P.textColor,"bold","center")
-  end
-  local ty=y+h-foot
-  P.one(card.display_name or card.name,x+5,ty+(tiny and 1 or 4),w-10,tiny and 13 or 18,P.textColor,"serif","center")
-  if not tiny and foot>=41 then
-    P.one(card.type:upper()..(card.health and "   ·   "..card.health.." HP" or ""),x+4,ty+24,w-8,11,spec.color,"bold","center")
-  end
-  if opt.selected or opt.chain then P.box(x,y+h-3,w,3,edge) end
-  if opt.activated then P.diamond(x+w-9,y+h-10,4,P.gold,true) end
+  local artHeight=h-footer-3
+  P.box(x+2,y+2,w-4,artHeight,spec.paper)
+  P.art(card,x+4,y+3,w-8,artHeight-2)
+  local ty=y+h-footer+1
+  P.one(card.display_name or card.name,x+4,ty,w-8,tiny and 13 or 18,P.textColor,"serif","center")
+  local color=opt.hp and opt.hp<card.health and P.red or P.textColor
+  P.one(Text.stats(card,opt.strength,opt.hp),x+3,ty+nameHeight,w-6,tiny and 12 or 14,color,"bold","center")
+  if #tags>0 then P.one(table.concat(tags," · "),x+3,ty+nameHeight+statHeight,w-6,tiny and 11 or 13,P.gold,"sans","center") end
+  if opt.selected or opt.chain then P.box(x,y+h-2,w,2,edge) end
 end
 function P.header(section)
   P.box(0,0,1280,70,P.inset);P.line(0,69,1280,69,P.rule)

@@ -1,7 +1,7 @@
 import {Api} from './api.js'
 import {Match} from './session.js'
 import {board, choices} from './board.js'
-import {esc, name, btn, art, cardFace, inspect} from './ui.js'
+import {esc, name, btn, art, cardFace, inspect, eventText} from './ui.js'
 
 const root = document.querySelector('#app'), dialog = document.querySelector('#dialog')
 let catalog, derive, api, match, draft, health = 'Checking server', healthOK = false
@@ -27,17 +27,20 @@ const deckRange = () => catalog.minDeckSize+'–'+catalog.maxDeckSize
 function loadDraft() {
   const saved = api.read('draft')
   if (saved?.seats?.length === 2 && saved.seats.every(valid) && ['solo','duel'].includes(saved.mode)) {
-    if (!saved.starterVersion) {
+    if ((saved.starterVersion || 0)<3) {
       for (const s of saved.seats) {
-        const previous=faction(s.faction).smallStarter
-        if (s.deck.length===previous.length && previous.every((id,i)=>s.deck[i]===id)) s.deck=[...faction(s.faction).starter]
+        const f=faction(s.faction)
+        // Upgrade an untouched starter. Keep deliberately tagged lists and later 20-card choices.
+        const old=f.id==='Super' ? f.starter : [f.id==='Water'?43:48,1,2,3,4,21,28,31,32,40,5,6,7,8,9,10,11,12,13,15,16,17,18,19,20,23,25,29,33,39].map(n=>f.id+':'+n)
+        const expected=!saved.starterVersion && s.deck.length===20 ? old.slice(0,20) : old
+        if (s.deck.length===expected.length && expected.every((id,i)=>s.deck[i]===id)) s.deck=[...f.starter]
       }
-      saved.starterVersion=2
+      saved.starterVersion=3
       api.save('draft',saved)
     }
     return saved
   }
-  return {starterVersion:2, mode:'solo', difficulty:'normal', seats:[defaultSeat('Fantasy'),defaultSeat('Water')]}
+  return {starterVersion:3, mode:'solo', difficulty:'normal', seats:[defaultSeat('Fantasy'),defaultSeat('Water')]}
 }
 function message(text) {
   const toast = document.querySelector('#toast')
@@ -69,18 +72,15 @@ function modal(title, body) {
   modalView = match?.view
   modalMatch = match?.id
   document.querySelector('#dialog-body').innerHTML =
-    `<div class="modal-head"><h2 id="dialog-title">${esc(title)}</h2>${btn('×','dismiss','','close').replace('<button ','<button aria-label="Close dialog" ')}</div>${body}`
+    `<div class="modal-head">${title ? '<h2 id="dialog-title">'+esc(title)+'</h2>' : ''}${btn('×','dismiss','','close').replace('<button ','<button aria-label="Close dialog" ')}</div>${body}`
   if (!dialog.open) dialog.showModal()
   dialog.scrollTop=0
 }
-const emblem = id => ({Fantasy:'♧',Water:'≈',Super:'ϟ'}[id] || '◇')
 function plate(i) {
   const s=draft.seats[i], f=faction(s.faction), c=cards()[f.featured]
   const arrow=(dir,icon)=>btn(icon,'faction',i+','+dir,'arrow').replace('<button ',`<button aria-label="${dir===1?'Next':'Previous'} ${i?'computer':'player'} faction" `)
-  return `<article class="plate f-${f.id}"><div class="plate-art"><span class="seat-label">${i?'Computer':'Your seat'}</span>
-    <span class="sigil" aria-hidden="true">${emblem(f.id)}</span><div class="art-halo"></div>${art(c)}
-    <span class="specimen">No. ${String(c.number).padStart(2,'0')} · ${esc(c.rarity)}</span></div>
-    <div class="plate-info"><div class="section-line"><h2>${esc(f.label)}</h2><div class="arrows">${arrow(-1,'‹')}${arrow(1,'›')}</div></div>
+  return `<article class="plate f-${f.id}"><div class="plate-art">${art(c)}</div>
+    <div class="plate-info"><span class="seat-label">${i?'Computer':'Your seat'}</span><div class="section-line"><h2>${esc(f.label)}</h2><div class="arrows">${arrow(-1,'‹')}${arrow(1,'›')}</div></div>
       <p>${esc(name(c))}</p></div>
     ${btn('Browse '+f.cards.length+' designs · '+s.deck.length+' tagged','workshop',i,'edit-deck')}</article>`
 }
@@ -104,7 +104,7 @@ function lobby() {
     ${solo?btn(match.busy?'Opening match…':'Start online match →','start','','primary',!live):
       btn('Create room →','create','','primary',!live)+btn('Join room','join','','full',!live || !/^[A-Z0-9]{6}$/.test(roomInput))}
     </section></div>
-    <div class="facts"><div><small>Match format</small><strong>Best of three</strong></div><div><small>Opening hand</small><strong>${catalog.opening} cards</strong></div><div><small>Battle deck</small><strong>${deckRange()} cards</strong></div><div><small>Each turn</small><strong>Draw 1 · play or pass</strong></div></div>`
+    <div class="facts"><div><small>Match format</small><strong>Best of three</strong></div><div><small>Opening hand</small><strong>${catalog.opening} cards</strong></div><div><small>Battle deck</small><strong>${deckRange()} cards</strong></div><div><small>Each turn</small><strong>Play, attack or pass</strong></div></div>`
 }
 function workshop() {
   const s=seat(), f=faction(s.faction), counts={}
@@ -114,7 +114,7 @@ function workshop() {
     <div class="builder-tools"><div class="section-line"><h2>${s.deck.length} tagged for the match</h2><span>${ready(s)?'Ready · ':''}Tag ${deckRange()} cards</span></div>
       <div class="actions">${btn('20-card starter','fill','20')}${btn('30-card starter','fill','30')}${btn('Random 20','fill','random')}${btn('Clear deck','fill','clear')}</div></div>
     <div class="tabs">${['All','Unit','Effect','Selected'].map(t=>btn(t==='All'?'All '+f.cards.length+' designs':t==='Selected'?'Tagged':t==='Unit'?'Units':'Effects','filter',t,t===filter?'on':'')).join('')}</div>
-    <div class="collection">${visible.map(id=>`<div class="draft-card">${cardFace(cards()[id],'catalog',id,'',Boolean(counts[id]))}
+    <div class="collection">${visible.map(id=>`<div class="draft-card">${cardFace(cards()[id],'catalog',id,{selected:Boolean(counts[id])})}
       <div class="counter">${btn('−','minus',id,'',!counts[id])}<span>${counts[id]||0} / ${f.limits[id]}</span>${btn('+','plus',id,'',counts[id]>=f.limits[id]||s.deck.length>=catalog.maxDeckSize)}</div></div>`).join('') || '<p>No cards selected.</p>'}</div>`
 }
 function waiting() {
@@ -176,9 +176,9 @@ async function dispatch(action,value) {
   if (action==='reset-auth') {
     api.save('auth',null);api.save('match',null);dialog.close();return checkHealth()
   }
-  if (action==='row-guide') return modal('Rows & Bridge',catalog.rowGuide.map(({title,detail})=>
+  if (action==='row-guide') return modal('Combat & Bridge',catalog.rowGuide.map(({title,detail})=>
     '<h3>'+esc(title)+'</h3><p>'+esc(detail)+'</p>').join('')+
-    '<div class="bridge-example" aria-label="Front: Minnow rank 1, Seahorse rank 2. Follow the bridge to rank 3 at the right end of Back."><b>Front</b><span>1 · Minnow</span><span>2 · Seahorse</span><b>Back</b><span class="example-end">↓ 3</span></div>')
+    '<div class="bridge-example" aria-label="Front: Minnow has base Strength 1, Seahorse has 2. Follow the bridge to a unit with base Strength 3 at the right end of Back."><b>Front</b><span>1 · Minnow</span><span>2 · Seahorse</span><b>Back</b><span class="example-end">↓ 3</span></div>')
   if (action==='resume') {error='';return match.resume()}
   if (action==='mode' || action==='difficulty') {draft[action]=value;error='';return saveDraft()}
   if (action==='faction') {
@@ -209,7 +209,7 @@ async function dispatch(action,value) {
     if (valid({...s,deck})) s.deck=deck
     return saveDraft()
   }
-  if (action==='catalog') {const c=cards()[value];return modal(name(c),inspect(c))}
+  if (action==='catalog') {const c=cards()[value];return modal(null,inspect(c))}
   if (['start','join','create'].includes(action)) {
     if (api.read('match') && !dialog.open) {
       return modal('Start a new match?', '<p>Starting or joining a new match closes your current match for both players.</p>'+btn('Continue',action,'','primary'))
@@ -239,7 +239,8 @@ async function dispatch(action,value) {
     const available=match.ready && !v.prompt
     const pick=available && legal.ok
     const text=c.replaces?'Play onto '+name(cards()[c.replaces]):c.type==='Effect'?'Play effect':'Choose placement'
-    return modal(name(c), inspect(c,u,metrics)+(pick?btn(text,'select',u.u,'primary'):available?'<p class="warn">'+esc(legal.reason)+'</p>':''))
+    const entry=c.health && legal.deployHp<c.health ? '<p class="hint">Deploys at '+legal.deployHp+'/'+c.health+' HP. Field an ally with base Strength 1–3 for full Health.</p>' : ''
+    return modal(null, inspect(c,u,metrics)+entry+(pick?btn(text,'select',u.u,'primary'):available?'<p class="warn">'+esc(legal.reason)+'</p>':''))
   }
   if (action==='select') {
     const u=myHand.find(u=>String(u.u)===value)
@@ -249,9 +250,28 @@ async function dispatch(action,value) {
     if (cards()[u.c].type==='Effect'||cards()[u.c].replaces) return play()
     render();root.querySelector('.placing')?.scrollIntoView({block:'center',behavior:'smooth'});return
   }
+  if (action==='attackers' || action==='targets') {
+    if (!match.ready || v.prompt) return
+    const options=action==='attackers' ? Object.keys(metrics.attacks).map(id=>({id:Number(id)})) :
+      (metrics.attacks[value] || []).map(o=>({id:o.target,power:o.power}))
+    const buttons=options.map(({id,power})=>{
+      const pos=metrics.units[id], unit=v.players[pos.seat-1].rows[pos.row-1][pos.pos-1], c=cards()[unit.c]
+      const detail=(pos.row===1?'Front':'Back')+' '+pos.pos+' · '+pos.strength+' STR · '+unit.hp+'/'+c.health+' HP'
+      const defense=unit.nd ? ' · Barrier' : unit.g ? ' · Guard '+unit.g : ''
+      const label=power==null ? detail : detail+defense+' · Attack for '+power+' before protection'
+      return `<button class="option" data-action="${power==null?'targets':'strike'}" data-value="${power==null?id:value+','+id}">${art(c)}<span><strong>${esc(name(c))}</strong><small>${esc(label)}</small></span></button>`
+    }).join('')
+    return modal(action==='attackers'?'Choose your attacker':'Choose an enemy', '<p>'+(
+      action==='attackers'?'Each unit can make one basic attack per round.':'A surviving Front defender counters for half its Strength, rounded down.')+'</p>'+buttons)
+  }
+  if (action==='strike' && modalView===v && match.ready && !v.prompt) {
+    const [attacker,target]=value.split(',').map(Number)
+    dialog.close()
+    return match.act({type:'attack',attacker,target})
+  }
   if (action==='unit') {
     const u=v.players.flatMap(p=>p.rows.flat().concat(p.discard)).find(u=>String(u.u)===value)
-    return modal(name(cards()[u.c]),inspect(cards()[u.c],u,metrics))
+    return modal(null,inspect(cards()[u.c],u,metrics)+(match.ready && !v.prompt && metrics.attacks[u.u] ? btn('Attack with this unit','targets',u.u,'primary') : ''))
   }
   if (action==='slot' && handIndex()>=0) {
     const [row,pos]=value.split(',').map(Number)
@@ -268,10 +288,11 @@ async function dispatch(action,value) {
     return modal((Number(value)===v.seat?'Your':'Opponent’s')+' discard pile',pile.length ?
       '<div class="pile-grid">'+pile.map(u=>cardFace(cards()[u.c],'unit',u.u)).join('')+'</div>':'<p>The pile is empty.</p>')
   }
-  if (action==='history') return modal('Event history','<ol class="history">'+match.log.map(l=>'<li>'+esc(l)+'</li>').join('')+'</ol>')
-  if (action==='scores') return modal('Round scores',`<p>You are ${esc(v.players[v.seat-1].name)}.</p>`+
+  if (action==='history') return modal('Event history','<ol class="history">'+match.log.map(l=>'<li>'+esc(eventText(l))+'</li>').join('')+'</ol>')
+  if (action==='scores') return modal('Round results',`<p>Enemy units defeated this round. You are ${esc(v.players[v.seat-1].name)}.</p>`+
     (v.history.length ? v.history.map(r=>`<div class="score-entry"><b>Round ${r.round}</b><span>${esc(v.players[0].name)} · ${r.scores[0]} / ${esc(v.players[1].name)} · ${r.scores[1]}</span>
-    <strong>${r.winner ? esc(v.players[r.winner-1].name)+' won' : 'Draw'}</strong></div>`).join('') : '<p>No completed rounds yet.</p>'))
+    ${r.damage ? '<small>Enemy Health removed · '+r.damage[0]+' / '+r.damage[1]+'</small>' : ''}
+    <strong>${r.winner ? esc(v.players[r.winner-1].name)+' won by '+esc(r.reason) : 'Draw'}</strong></div>`).join('') : '<p>No completed rounds yet.</p>'))
 }
 
 document.addEventListener('click',async e=>{

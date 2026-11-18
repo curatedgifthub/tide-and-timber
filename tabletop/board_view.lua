@@ -1,7 +1,9 @@
+local Text=require('tabletop.card_text')
 local P=require('tabletop.paint')
 local Lib=require('tabletop.library')
 local B=require('battle')
 local Chains=require('chains')
+local Rules=require('rules')
 local V={}
 -- The battlefield is always drawn from the player's own seat: their rows and hand at the
 -- bottom, the other side on top. The state is the mirror of the server's view, so the
@@ -20,7 +22,6 @@ local function row(app,p,r,y,chains)
   local page=math.max(1,math.min(math.max(1,math.ceil(#cards/7)),app.rowPages[key] or 1))
   local start=(page-1)*7+1
   local stop=math.min(#cards,start+6)
-  local score=0;for _,u in ipairs(cards) do score=score+B.strength(s,u) end
   local unit=picked(app)
   -- A Double Agent is deployed on the other player's rows.
   local placing=unit and B.deploy_side(m.seat,unit.card)==p
@@ -29,7 +30,7 @@ local function row(app,p,r,y,chains)
   P.box(x,y,4,h,spec.color)
   P.label(app:who(p),x+14,y+10,spec.color)
   P.text(r==1 and "Front" or "Back",x+14,y+28,24,P.textColor,"serif")
-  P.text(score.." STR",x+15,y+59,13,P.muted,"bold")
+  P.text(r==1 and "Guards Back" or "Support",x+15,y+59,13,P.muted,"bold")
   P.line(x+94,y+9,x+94,y+79,P.rule)
   local left=x+119;local available=w-145
   if placing and app.previewUnit~=unit then
@@ -60,20 +61,16 @@ local function row(app,p,r,y,chains)
       P.line(left+available*.52,y+44,left+available*.66,y+44,P.rule,.65)
     end
   else
-    local pitch=math.min(101,(available-16)/(stop-start+1))
+    local pitch=math.min(139,(available-16)/(stop-start+1))
     local cw=pitch-19
     for i=start,stop do
       local u=cards[i];local xx=left+10+(i-start)*pitch
-      P.card(u.card,xx,y+5,cw,77,{chain=chains[u],activated=u.activated.chain,
+      P.card(u.card,xx,y+3,cw,82,{chain=chains[u],linked=app.bridgeEnds[u],disabled=u.disabled,spent=u.spent,
         strength=B.strength(s,u),hp=u.hp,selected=app.inspected==u})
-      if app.flash[u.uid] and app.flashTime>0 then P.border(xx-1,y+4,cw+2,79,P.bright,math.min(1,app.flashTime)) end
+      if app.flash[u.uid] and app.flashTime>0 then P.border(xx-1,y+2,cw+2,84,P.bright,math.min(1,app.flashTime)) end
       if i>start and app.chainEdges[cards[i-1].uid.."/"..u.uid] then
         P.line(xx-18,y+44,xx-2,y+44,spec.color)
         P.diamond(xx-10,y+44,3,spec.color,true)
-      end
-      if app.bridgeEnds[u] or u.card.bridge and not u.disabled then
-        local label=app.bridgeEnds[u] and "LINKED" or "BRIDGE"
-        P.box(xx+cw-44,y+42,44,14,spec.ink);P.one(label,xx+cw-44,y+42,44,11,P.gold,"bold","center")
       end
       P.hit("unit-"..u.uid,xx,y+4,cw,80,function() app.inspected=u end,
         function() app.hovered=u end)
@@ -104,11 +101,12 @@ local function scoreBar(app,p,x)
   P.icon(spec.emblem,x+16,102,12,spec.color)
   -- pl.name is how the battle record refers to this seat.
   P.label(app:who(p).."   /   "..pl.name,x+38,80,spec.color)
-  P.text(Lib.label(pl.faction),x+38,99,28,P.textColor,"serif")
+  P.one(Lib.label(pl.faction),x+38,94,133,22,P.textColor,"serif")
   local score=s.finished and #s.round_history>0 and s.round_history[#s.round_history].scores[p] or B.score(s,p)
   P.one(score,x+165,83,51,41,P.textColor,"serif","right")
-  P.text("STR",x+223,107,12,P.muted,"bold")
+  P.text("KOs",x+223,107,12,P.muted,"bold")
   for i=1,2 do P.diamond(x+270+(i-1)*16,104,5,i<=pl.wins and P.gold or P.rule,i<=pl.wins) end
+  P.one((s.finished and s.round_history[#s.round_history].damage and s.round_history[#s.round_history].damage[p] or pl.damage or 0).." damage · "..((s.finished or pl.passed) and 0 or math.max(0,Rules.combat_turns-(pl.round_turns or 0))).." turns left",x+7,120,155,12,P.muted)
   P.text("Draw "..#pl.deck,x+7,139,15,P.muted)
   P.button("pile-"..p,"Discard "..#pl.discard,x+78,134,99,26,function() app:pile(p,"discard") end)
   P.button("hand-"..p,"Hand "..#pl.hand,x+184,134,85,26,function() app:pile(p,"hand") end)
@@ -126,32 +124,25 @@ local function inspector(app,u)
   if not u then
     P.icon("cards",x+w/2,y+105,43,P.rule)
     P.text("Inspect a card",x+14,y+179,27,P.textColor,"serif",w-28,"center")
-    P.text("Hover a face-up card to read its abilities and current statistics.",x+34,y+222,18,P.muted,"sans",w-68,"center");return
+    P.text("Select a face-up card to read its abilities and current statistics.",x+34,y+222,18,P.muted,"sans",w-68,"center");return
   end
   local c=u.card;local spec=Lib.specs[c.faction]
-  P.plate(spec,x+14,y+36,94,90);P.art(c,x+18,y+40,86,82)
-  P.one(c.display_name or c.name,x+119,y+39,w-132,24,P.textColor,"serif")
-  P.text(c.rarity.." "..c.type,x+119,y+72,16,spec.color)
-  P.text(c.id..(u.uid and "   #" ..u.uid or ""),x+119,y+96,15,P.muted)
-  if c.strength then
-    P.line(x+14,y+139,x+w-14,y+139,P.rule)
-    local val=u.hp and B.strength(app.match.state,u) or c.strength
-    local nums={{"RANK",c.strength},{"STRENGTH",val},{"HEALTH",(u.hp or c.health).."/"..c.health}}
-    for i,n in ipairs(nums) do
-      local xx=x+15+(i-1)*101
-      P.label(n[1],xx,y+149)
-      P.text(n[2],xx,y+165,24,i==2 and val~=c.strength and P.gold or P.textColor,"serif")
-    end
-  end
-  -- Long rules text shrinks to stay above the status line.
-  local top=y+(c.strength and 199 or 149);local size=16
+  P.box(x+14,y+33,w-28,103,spec.paper);P.art(c,x+18,y+36,w-36,97)
+  P.one(c.display_name or c.name,x+15,y+140,w-30,23,P.textColor,"serif")
+  local value=u.hp and B.strength(app.match.state,u) or c.strength
+  local stats=Text.stats(c,value,u.hp)
+  if c.strength and value~=c.strength then stats=stats.."   (base "..c.strength.." STR)" end
+  P.one(stats,x+15,y+170,w-30,16,P.textColor,"bold")
+  local ability=c.text
+  local top=y+197;local size=16
   while size>11 do
-    local _,lines=P.font(size):getWrap(c.text,w-30)
+    local _,lines=P.font(size):getWrap(ability,w-30)
     if top+#lines*P.font(size):getHeight()<=y+296 then break end
     size=size-1
   end
-  P.text(c.text,x+15,top,size,P.textColor,"sans",w-30)
+  P.text(ability,x+15,top,size,P.textColor,"sans",w-30)
   local tags={}
+  if u.spent then tags[#tags+1]="Attack used" end
   if u.activated and u.activated.chain then tags[#tags+1]="Chain used" end
   if (u.guard or 0)>0 then tags[#tags+1]="Guard "..u.guard end
   if u.negate_damage then tags[#tags+1]="Barrier" end
@@ -166,8 +157,13 @@ local function battleLog(app)
   P.label("Battle record",x+15,y+13,P.gold)
   P.button("full-log","View all",x+w-88,y+7,74,26,function() app:log() end)
   local yy=y+46
+  if app.match.state.last_attack then
+    local _,lines=P.font(15):getWrap(app.match.state.last_attack,w-49)
+    P.text(app.match.state.last_attack,x+15,yy,15,P.gold,"sans",w-49)
+    yy=yy+#lines*P.font(15):getHeight()+6
+  end
   for i=#log,math.max(1,#log-3),-1 do
-    local msg=log[i]; P.diamond(x+19,yy+9,3,i==#log and P.gold or P.rule,true)
+    local msg=Text.event(log[i]); P.diamond(x+19,yy+9,3,i==#log and P.gold or P.rule,true)
     local font=P.font(15);local _,lines=font:getWrap(msg,w-49)
     for j=1,math.min(#lines,2) do
       if yy+18>y+181 then return end
@@ -196,8 +192,8 @@ function V.draw(app)
   P.header("Battlefield")
   P.one(Lib.modes[m.mode=="duel" and 2 or 1].name..(m.code and "   ·   Room "..m.code or ""),455,29,268,13,P.muted,"bold","right")
   P.button("rounds","Round "..s.round.." / 3",738,18,140,36,function() app:rounds() end)
-  P.button("row-guide","Rows & Bridge",884,18,147,36,function()
-    app:list("Rows & Bridge","Choose where to deploy a unit.",Placement.guide)
+  P.button("row-guide","Combat & Bridge",884,18,147,36,function()
+    app:list("Combat & Bridge","Choose where to deploy a unit.",Placement.guide)
   end)
   P.button("match-menu","Match menu",1044,18,209,36,function() app:matchMenu() end)
   scoreBar(app,foe,34);scoreBar(app,me,535)
@@ -233,10 +229,11 @@ function V.draw(app)
     or chosen and (chosen.card.type=="Effect" and "Choose Play effect to resolve."
       or chosen.card.replaces and "Choose Play onto "..Lib.cards.by_id[chosen.card.replaces].name.." to resolve."
       or chosen.card.agent and "Choose a gold marker on the opposing battlefield."
+      or B.deployment_health(s,me,chosen.card)<chosen.card.health and ("Deploys at "..B.deployment_health(s,me,chosen.card).."/"..chosen.card.health.." HP without a light ally.")
       or chosen.card.bridge and "Place at a right end to link Front and Back."
       or Placement.bonus(chosen.card,2) and "Back row bonus · "..Placement.bonus(chosen.card,2)
-      or "Both rows score. Choose a gold marker.")
-    or "Select a card to play."
+      or "Front guards Back. Choose a gold marker.")
+    or "Play a card, attack with a unit or pass."
   local perPage=app.handPageSize
   local pages=math.max(1,math.ceil(#hand/perPage))
   local page=math.min(pages,app.handPages[me])
@@ -253,12 +250,7 @@ function V.draw(app)
     local u=hand[i]
     local x=29+(i-first)*110;local selected=mine and app.selected==i;local yy=selected and 607 or 614
     local cw=104
-    P.card(u.card,x,yy,cw,146,{selected=selected})
-    if app.freshCards[me][u.uid] then
-      P.border(x-1,yy-1,cw+2,148,P.bright)
-      P.box(x+cw-58,yy+4,54,19,P.gold)
-      P.one("NEW DRAW",x+cw-57,yy+5,52,12,P.dark,"bold","center")
-    end
+    P.card(u.card,x,yy,cw,146,{selected=selected,fresh=app.freshCards[me][u.uid]})
     P.hit("handcard-"..i,x,yy,cw,146,function()
       app.inspected=u
       if mine then
@@ -292,7 +284,12 @@ function V.draw(app)
       P.button("play-effect","Play onto "..Lib.cards.by_id[chosen.card.replaces].name.."   →",x,y+27,328,44,function() app:action({type="play",index=app.selected}) end,"gold")
     elseif s.extra_turn then P.button("end-extra","End extra plays",x,y+27,328,44,function() app:action({type="end"}) end)
     else P.button("manual-help",chosen and "Choose a row position" or "Select a hand card",x,y+27,328,44,nil,nil,false) end
-    P.button("pass","Pass this round",x,y+80,328,44,function() app:action({type="pass"}) end,"accent")
+    local attack=false
+    if #B.attack_targets(s,me)>0 then
+      for _,u in ipairs(B.units(s,me)) do if B.ready(s,me,u) then attack=true;break end end
+    end
+    if attack then P.button("attack","Attack with a unit",x,y+80,174,44,function() app:attackMenu() end,"gold") end
+    P.button("pass","Pass this round",attack and x+180 or x,y+80,attack and 148 or 328,44,function() app:action({type="pass"}) end,"accent")
   else
     P.button("manual-help",waiting(app) or "Answer the question",x,y+27,328,44,nil,nil,false)
     P.one(m.mode=="duel" and "Every move is checked and dealt by the game server." or "The computer plays on the game server.",x,y+85,328,14,P.muted,"sans")

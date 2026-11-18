@@ -1,6 +1,7 @@
 -- Temporary resolutions for underspecified cases. Read DECISIONS.md.
 return {
   starting_hand = 5,
+  combat_turns = 8,
   min_deck_size = 20,
   max_deck_size = 30,
   -- Explicit fixed-size scenarios from the original terminal simulator.

@@ -11,6 +11,7 @@ local catalog = {
   minDeckSize = rules.min_deck_size,
   maxDeckSize = rules.max_deck_size,
   opening = rules.starting_hand,
+  roundTurns = rules.combat_turns,
   rowGuide = require("tabletop.placement").guide,
   cards = json.object({}),
   factions = {},

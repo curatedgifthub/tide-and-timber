@@ -82,24 +82,39 @@ local function evaluate(s,p,index,row,pos)
       end
     elseif #B.units(s,p)==0 and #B.units(s,3-p)==0 then val=val-5 end
   end
+  if s.combat and card.type=='Unit' and not card.agent then
+    local health=B.deployment_health(s,p,card)
+    val=val-(card.health-health)*0.65
+    if card.strength<=3 and #B.units(s,p)==0 then
+      for _,ally in ipairs(mine.hand) do
+        if ally.card.strength and ally.card.strength>=5 then val=val+2.5;break end
+      end
+    end
+    if row==1 and card.health>=5 and #mine.rows[1]==0 then val=val+1.8 end
+    if row==2 and #mine.rows[1]>0 and card.health<=4 then val=val+1.8 end
+  end
   if s.round==1 then val=val-(foe-me>8 and 1.0 or 0) end
   return val
 end
 function AI.decision(s,p,difficulty)
   if B.can_school(s,p) then return {type='school'} end
   local legal=B.legal_indices(s,p)
-  if #legal==0 then return {type='pass'} end
+  if not s.combat and #legal==0 then return {type='pass'} end
   local me=B.score(s,p);local opponent=B.score(s,3-p)
   local theirs=s.players[3-p];local mine=s.players[p]
-  if theirs.passed and (me>opponent or me==opponent and #mine.hand<=2) then return {type='pass'} end
-  -- Budget the opening hand across the remaining rounds. Hand counts are public.
-  local can_concede=s.round<3 and theirs.wins==0
-  if can_concede and not theirs.passed and #mine.hand<=5 and
-      (me>=opponent+3 or (me<opponent and #mine.hand<=#theirs.hand)) then
-    return {type='pass'}
+  if s.combat then
+    if theirs.passed and B.round_result(s)==p then return {type='pass'} end
+  else
+    if theirs.passed and (me>opponent or me==opponent and #mine.hand<=2) then return {type='pass'} end
+    -- Budget the opening hand across the remaining rounds. Hand counts are public.
+    local can_concede=s.round<3 and theirs.wins==0
+    if can_concede and not theirs.passed and #mine.hand<=5 and
+        (me>=opponent+3 or (me<opponent and #mine.hand<=#theirs.hand)) then
+      return {type='pass'}
+    end
+    if #mine.hand<=2 and me>opponent+5 and s.round<3 then return {type='pass'} end
+    if s.round==1 and not theirs.passed and me+8<opponent and #mine.hand<=4 then return {type='pass'} end
   end
-  if #mine.hand<=2 and me>opponent+5 and s.round<3 then return {type='pass'} end
-  if s.round==1 and not theirs.passed and me+8<opponent and #mine.hand<=4 then return {type='pass'} end
   local moves={}
   for _,index in ipairs(legal) do
     local card=mine.hand[index].card
@@ -112,19 +127,42 @@ function AI.decision(s,p,difficulty)
       end
     else moves[#moves+1]={type='play',index=index,value=evaluate(s,p,index,1,1)} end
   end
+  if s.combat then
+    for _,u in ipairs(B.units(s,p)) do if B.ready(s,p,u) then
+      for _,target in ipairs(B.attack_targets(s,p)) do
+        local damage=math.max(0,B.attack_power(s,u,target)-(target.guard or 0))
+        if target.negate_damage then damage=0 end
+        local lethal=damage>=target.hp
+        local value=3+math.min(damage,target.hp)+(lethal and 10 or 0)
+        if not lethal and #theirs.rows[1]>0 then value=value-math.floor(B.strength(s,target)/2)*0.75 end
+        if not target.spent then value=value+math.min(6,B.strength(s,target))*.3 end
+        moves[#moves+1]={type='attack',attacker=u.uid,target=target.uid,value=value}
+      end
+    end end
+  end
   if #moves==0 then return {type='pass'} end
   local best=moves[1]
   for _,move in ipairs(moves) do
     if move.value>best.value then best=move end
   end
-  if difficulty=='easy' then best=moves[s.rng:random(#moves)] end
+  if difficulty=='easy' and (not s.combat or s.rng:random(3)~=1) then
+    local random=moves[s.rng:random(#moves)]
+    -- Count legal attacks independently of the number of deployment slots.
+    if s.combat and s.rng:random(2)==1 then
+      local attacks={}
+      for _,move in ipairs(moves) do if move.type=='attack' then attacks[#attacks+1]=move end end
+      if #attacks>0 then random=attacks[s.rng:random(#attacks)] end
+    end
+    best=random
+  end
   -- Pass when the likely value of playing a card would not justify spending it.
-  if theirs.passed and me==opponent and #mine.hand>1 and s.round<3 and best.value<3 then return {type='pass'} end
+  if not s.combat and theirs.passed and me==opponent and #mine.hand>1 and s.round<3 and best.value<3 then return {type='pass'} end
   return best
 end
 function AI.step(s,p,difficulty)
   if s.active~=p or s.finished then return false,'Not active' end
   local move=AI.decision(s,p,difficulty)
+  if move.type=='attack' then return B.attack(s,p,move.attacker,move.target) end
   if move.type=='pass' then return B.pass(s,p) end
   if move.type=='school' then return B.school(s,p) end
   return B.play(s,p,move.index,move.row,move.pos)

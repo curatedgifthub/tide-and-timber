@@ -40,6 +40,12 @@ local function decide(mirror,seat,rng)
   local legal={}
   for i=1,#s.players[seat].hand do if B.playable(s,seat,i) then legal[#legal+1]=i end end
   if s.extra_turn and rng:random(4)==1 then return {type='end'} end
+  local targets=B.attack_targets(s,seat)
+  if #targets>0 and (#legal==0 or rng:random(3)==1) then
+    for _,u in ipairs(B.units(s,seat)) do
+      if B.ready(s,seat,u) then return {type='attack',attacker=u.uid,target=targets[rng:random(#targets)].uid} end
+    end
+  end
   if #legal==0 or rng:random(14)==1 then return {type='pass'} end
   local i=legal[rng:random(#legal)];local card=s.players[seat].hand[i].card
   if card.type=='Unit' and not card.replaces then
@@ -286,7 +292,7 @@ test("Refused requests: wrong turn, stale or repeated moves, strangers, bad room
     if c.card.type=='Unit' then unitIndex=i;break end
   end
   assert(act(mover,{type='play',index=assert(unitIndex),row=1,pos=7}).error=='illegal')
-  for _,bad in ipairs({{type='play'},{type='play',index='1'},{type='play',index=1.5,row=1,pos=1},{type='cheat'},{type='ai'},{}}) do
+  for _,bad in ipairs({{type='attack',attacker=1},{type='attack',attacker='2',target=3},{type='attack',attacker=1,target=2},{type='play'},{type='play',index='1'},{type='play',index=1.5,row=1,pos=1},{type='cheat'},{type='ai'},{}}) do
     local e=act(mover,bad).error;assert(e=='bad_request' or e=='illegal',json.encode(bad))
   end
   assert(m.seq==seq and not m.pending,'refused requests change nothing')
@@ -296,10 +302,12 @@ test("Refused requests: wrong turn, stale or repeated moves, strangers, bad room
   assert(act(mover,{type='pass'},seq,'other').error=='stale')
   -- A question addressed to one player cannot be answered by the other, or with a value off the list.
   local asked
+  local searchDeck=deck('Fantasy')
+  searchDeck[1]='Fantasy:5' -- put the tested search ability in both decks explicitly
   for attempt=1,400 do
     local h=Host.new({seed=7000+attempt})
-    local c=h:game('ann',{op='create',mode='duel',rules=h.rules,player={faction='Fantasy',deck=deck('Fantasy')}})
-    h:game('bob',{op='join',code=c.code,rules=h.rules,player={faction='Fantasy',deck=deck('Fantasy')}})
+    local c=h:game('ann',{op='create',mode='duel',rules=h.rules,player={faction='Fantasy',deck=searchDeck}})
+    h:game('bob',{op='join',code=c.code,rules=h.rules,player={faction='Fantasy',deck=searchDeck}})
     local mm=h.matches[c.match];local st=Server.restore(mm.snapshot);local hand=st.players[st.active].hand
     for i,u in ipairs(hand) do
       if u.card.id=='Fantasy:5' and #st.players[st.active].deck>=3 then

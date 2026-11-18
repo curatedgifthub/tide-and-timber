@@ -7,6 +7,7 @@ import {join} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {Api} from '../src/api.js'
 import {Match} from '../src/session.js'
+import {cardFace,inspect} from '../src/ui.js'
 
 const catalog = JSON.parse(readFileSync(new URL('../dist/catalog.json', import.meta.url)))
 const root = fileURLToPath(new URL('../../', import.meta.url))
@@ -46,6 +47,13 @@ try {
   for (const f of catalog.factions) {
     assert.equal(f.starter.length,30)
     assert.equal(f.smallStarter.length,20)
+  }
+  for (const card of Object.values(catalog.cards)) {
+    const face=cardFace(card,'catalog',card.id)
+    assert.match(face,/<span class="card-image"><img[^>]+><\/span><span class="card-caption">/)
+    const visible=(face+inspect(card)).replace(/<[^>]+>/g,'')
+    assert.doesNotMatch(visible,/\b(?:rank|uncommon|rare|common)\b|(?:Super|Fantasy|Water):\d+/i)
+    if (card.type==='Unit') assert.ok(visible.includes(card.health+'/'+card.health+' HP'))
   }
   let host=client(), guest=client()
   await host.open({op:'create',mode:'duel',player:{faction:catalog.factions[0].id, deck:catalog.factions[0].starter},rules:catalog.rules})

@@ -40,29 +40,33 @@ local function read_name(prompt)
     print('Use letters, digits, hyphens or underscores only (maximum 80).')
   end
 end
-local function catalogue(f,rarity)
-  local shown={}
-  print('\n'..f..' catalog'..(rarity and ' ('..rarity..')' or '')..':')
+local function stats(card)
+  return card.strength and (card.strength.." STR   "..card.health.."/"..card.health.." HP") or "Effect"
+end
+local function catalogue(f,filter)
+  print("\n"..f.." catalog")
   for _,c in ipairs(Cards[f]) do
-    if not rarity or c.rarity==rarity then
-      shown[#shown+1]=c
-      print(string.format('  %-10s %-27s %-8s %-6s %s',c.id,c.name,c.rarity,c.type,
-        c.type=='Unit' and ('STR '..c.strength..', HP '..c.health) or ''))
+    if not filter or c.type==filter or filter=='Bridge' and c.bridge then
+      print(string.format("  %-27s %s",c.display_name or c.name,stats(c)))
     end
   end
-  return shown
 end
 local function card_info(card)
   if not card then print('Unknown card');return end
-  print(string.format('%s | %s | %s | %s',card.id,card.name,card.faction,card.rarity))
-  if card.type=='Unit' then print('Printed Strength: '..card.strength..' | Health: '..card.health) end
-  print('Ability: '..card.text)
+  print(card.display_name or card.name)
+  print(stats(card))
+  print(card.text)
 end
 local function card_id(prompt,filter)
   while true do
-    local raw=ask(prompt..' (faction:number, name, or blank to cancel):')
+    local raw=ask(prompt..' (card name, or blank to cancel):')
     if raw=='' then return nil end
     local c=Cards.by_id[raw] or Cards.by_name[raw:lower()]
+    if not c then
+      for _,candidate in pairs(Cards.by_id) do
+        if candidate.display_name and candidate.display_name:lower()==raw:lower() then c=candidate;break end
+      end
+    end
     if c and (not filter or filter(c)) then return c.id end
     print('Card not found or not eligible. Use the catalog to inspect valid names.')
   end
@@ -78,7 +82,7 @@ local function show_deck(deck)
   print('Battle Deck ('..#deck..' cards):')
   for _,id in ipairs(keys) do
     local c=Cards.by_id[id]
-    print(string.format('  %-10s x%-2d %-26s %-8s %s',id,counts[id],c.name,c.rarity,c.type))
+    print(string.format('  x%-2d %-26s %s',counts[id],c.display_name or c.name,stats(c)))
   end
 end
 local function collection_menu(profile,f)
@@ -89,7 +93,7 @@ local function collection_menu(profile,f)
   table.sort(entries,function(a,b)return Cards.by_id[a.id].number<Cards.by_id[b.id].number end)
   if #entries==0 then print('No owned cards.') end
   for _,entry in ipairs(entries) do
-    print(string.format('  %-10s x%-2d %s',entry.id,entry.n,Cards.by_id[entry.id].name))
+    print(string.format('  x%-2d %s',entry.n,Cards.by_id[entry.id].display_name or Cards.by_id[entry.id].name))
   end
 end
 local function deck_menu(config,profile,side)
@@ -99,15 +103,14 @@ local function deck_menu(config,profile,side)
     local f=config[fk]
     print('\nEditing '..(side==1 and 'Player' or 'Opponent')..' '..f..' Battle Deck')
     local action=choice('Deck editor:',{
-      'Show deck','Show all faction cards','Show Common cards',
-      'Show Uncommon cards','Show Rare cards','Inspect a card',
+      'Show deck','Show all faction cards','Show units',
+      'Show effects','Show Bridges','Inspect a card',
       'Replace a card','Remove a card (draft)','Add card to free slot',
       'Save deck','Load deck','Back'})
     if action==12 then return end
     if action==1 then show_deck(config[dk])
     elseif action>=2 and action<=5 then
-      local rarity=({[3]='Common',[4]='Uncommon',[5]='Rare'})[action]
-      catalogue(f,rarity)
+      catalogue(f,({[3]='Unit',[4]='Effect',[5]='Bridge'})[action])
     elseif action==6 then
       card_info(Cards.by_id[card_id('Card to inspect',function(c)return c.faction==f end) or ''])
     elseif action==7 then
@@ -216,8 +219,8 @@ local function view_board(s)
     print(label..':')
     if #row==0 then print('  (empty)') end
     for pos,u in ipairs(row) do
-      print(string.format('  [%d] #%-3d %-23s printed %d -> STR %-2d HP %d/%d',
-        pos,u.uid,u.card.name,u.card.strength,Battle.strength(s,u),u.hp,u.card.health))
+      print(string.format('  [%d] %-23s STR %-2d HP %d/%d',
+        pos,u.card.display_name or u.card.name,Battle.strength(s,u),u.hp,u.card.health))
     end
   end
   show_row(2,2);show_row(2,1)
@@ -230,9 +233,9 @@ local function view_board(s)
   end
   print('YOUR HAND:')
   for i,c in ipairs(s.players[1].hand) do
-    local st=c.card.type=='Unit' and ('STR '..c.card.strength..' HP '..c.card.health) or 'Effect'
+    local st=stats(c.card)
     local legal=Battle.playable(s,1,i)
-    print(string.format('  [%2d] %-26s %-14s %s%s',i,c.card.name,st,c.card.rarity,legal and '' or ' [not playable]'))
+    print(string.format('  [%2d] %-26s %-14s %s',i,c.card.display_name or c.card.name,st,legal and '' or ' [not playable]'))
   end
   print(string.rep('=',78))
 end
@@ -243,15 +246,15 @@ local function human_chooser(s,actor,kind,options,context)
     local label
     if kind=='unit' then
       local p,r,pos=Battle.position(s,item)
-      label=string.format('#%d %s | %s %s[%d] | STR %d HP %d',
-        item.uid,item.card.name,p==1 and 'Player' or 'Opponent',r==1 and 'Front' or 'Back',pos,
-        Battle.strength(s,item),item.hp)
-    elseif kind=='card' or kind=='bottom_order' then label=item.card.name..' ('..item.card.id..')'
+      label=string.format('%s | %s %s[%d] | STR %d HP %d/%d',
+        item.card.display_name or item.card.name,p==1 and 'Player' or 'Opponent',r==1 and 'Front' or 'Back',pos,
+        Battle.strength(s,item),item.hp,item.card.health)
+    elseif kind=='card' or kind=='bottom_order' then label=item.card.display_name or item.card.name
     elseif kind=='chain' then
       local names={};for _,u in ipairs(item.units) do names[#names+1]=u.card.name end
       label=table.concat(names,' > ')
     elseif kind=='chain_activation' then
-      label=item.unit.card.name..'#'..item.unit.uid..' (Chain '..item.unit.card.chain..', length '..item.chain.length..')'
+      label=item.unit.card.name..' (Chain '..item.unit.card.chain..', length '..item.chain.length..')'
     elseif kind=='row' then label=item==1 and 'Front row' or 'Back row'
     elseif kind=='side' then label=item==1 and 'Player' or 'Opponent'
     elseif kind=='position' then label='Position '..item
@@ -302,7 +305,7 @@ local function match(config,profile)
       elseif a==4 then
         for p=1,2 do
           print(s.players[p].name..' discard pile:')
-          for i,c in ipairs(s.players[p].discard) do print('  '..i..': '..c.card.name..' ('..c.card.id..')') end
+          for i,c in ipairs(s.players[p].discard) do print('  '..i..': '..(c.card.display_name or c.card.name)) end
         end
       elseif a==5 then
         local ok,err=Battle.pass(s,1);if not ok then print(err) end
@@ -316,7 +319,7 @@ local function match(config,profile)
   local reward_note=nil
   if config.reward and config.mode=='progression' then
     local ok,reward=Progression.award(profile,config.reward,config.ai_deck,s.winner)
-    if ok then awarded=Cards.by_id[reward].name..' ('..reward..')'
+    if ok then awarded=Cards.by_id[reward].display_name or Cards.by_id[reward].name
     else reward_note='Reward not granted: '..tostring(reward) end
   elseif config.reward then
     reward_note='Sandbox match: reward is for testing only; no collection changed.'

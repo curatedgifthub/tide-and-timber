@@ -1,3 +1,4 @@
+local Text=require('tabletop.card_text')
 local P=require('tabletop.paint')
 local Lib=require('tabletop.library')
 local Decks=require('decks')
@@ -18,8 +19,6 @@ local function factionPlate(app,p,x)
   P.box(x+4,y+6,w,h,P.black);P.box(x,y,w,h,spec.ink);P.border(x,y,w,h,spec.color)
   P.plate(spec,x+8,y+8,w-16,246,true)
   P.border(x+15,y+15,w-30,232,spec.ink,.55)
-  P.label(featured.rarity,x+27,y+23,spec.ink)
-  P.icon(spec.emblem,x+w-37,y+36,12,spec.ink)
   P.art(featured,x+36,y+20,w-72,220)
   P.label(p==1 and "YOU" or "COMPUTER   /   "..cfg.difficulty,x+23,y+270,spec.color)
   P.text(Lib.label(faction),x+22,y+291,39,P.textColor,"serif")
@@ -80,7 +79,7 @@ function View.menu(app)
       P.button("difficulty-"..level,level=="normal" and "Normal" or "Easy",x+112+(i-1)*98,y+299,90,31,
         function() cfg.difficulty=level end,cfg.difficulty==level and "gold" or nil)
     end
-    P.text("Easy plays any legal card.",x+22,y+340,15,P.muted)
+    P.text("Easy picks a legal play or attack.",x+22,y+340,15,P.muted)
     if not mine then P.button("build","Build your deck   →",x+17,y+377,w-34,49,function() app:builder(1) end,"gold")
     elseif not Lib.computer_ready(cfg) then P.button("build","Finish the computer's deck   →",x+17,y+377,w-34,49,function() app:builder(2) end,"gold")
     else P.button("start","Start online match   →",x+17,y+377,w-34,49,function() app:online("solo") end,ready and "gold" or nil,ready) end
@@ -93,7 +92,7 @@ function View.menu(app)
     end
   end
   P.line(36,689,1245,689,P.rule)
-  local facts={{"MATCH","Best of three"},{"OPENING HAND",Rules.starting_hand.." random cards"},{"DECK",Rules.min_deck_size.."–"..Rules.max_deck_size.." tagged cards"},{"TURN","Draw 1 · play or pass"}}
+  local facts={{"MATCH","Best of three"},{"OPENING HAND",Rules.starting_hand.." random cards"},{"DECK",Rules.min_deck_size.."–"..Rules.max_deck_size.." tagged cards"},{"TURN","Play, attack or pass"}}
   for i,v in ipairs(facts) do
     local xx=39+(i-1)*304
     if i>1 then P.line(xx-19,713,xx-19,761,P.rule) end
@@ -156,17 +155,20 @@ function View.builder(app)
   P.label("Card inspection",x+18,166,P.gold)
   P.plate(spec,x+18,191,w-36,149);P.art(c,x+27,197,w-54,137)
   P.one(c.display_name or c.name,x+18,350,w-36,30,P.textColor,"serif")
-  P.text(c.id.."  ·  "..c.rarity.."  ·  "..c.type,x+18,390,17,spec.color)
-  if c.strength then P.text("Printed "..c.strength.." STR     "..c.health.." HP",x+18,417,16,P.textColor,"bold") end
-  -- Long rules text shrinks to stay inside the panel.
-  local top=c.strength and 446 or 419
+  P.text(Text.stats(c),x+18,391,17,P.textColor,"bold")
+  local ability=c.text
+  local top=425
+  if c.strength and c.strength>=5 and not c.replaces then
+    P.text("Heavy · Without a base Strength 1–3 ally, deploy at "..math.ceil(c.health/2).."/"..c.health.." HP.",x+18,422,15,P.gold,"sans",w-36)
+    top=469
+  end
   local size=17
   while size>12 do
-    local _,lines=P.font(size):getWrap(c.text,w-36)
+    local _,lines=P.font(size):getWrap(ability,w-36)
     if top+#lines*P.font(size):getHeight()<=578 then break end
     size=size-1
   end
-  P.text(c.text,x+18,top,size,P.muted,"sans",w-36)
+  P.text(ability,x+18,top,size,P.muted,"sans",w-36)
   P.line(x+18,583,x+w-18,583,P.rule)
   P.label("Tag "..Rules.min_deck_size.."–"..Rules.max_deck_size.."   ·   Open with "..Rules.starting_hand,x+18,598,P.gold)
   local ready=true

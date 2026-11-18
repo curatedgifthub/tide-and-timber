@@ -1,4 +1,4 @@
-import {esc, name, rowName, btn, cardFace, art} from './ui.js'
+import {esc, name, rowName, btn, cardFace, art, eventText} from './ui.js'
 
 export function board(match, catalog, metrics, selected) {
   const v = match.view, me = v.seat, foe = 3-me, cards = catalog.cards
@@ -14,7 +14,7 @@ export function board(match, catalog, metrics, selected) {
     v.prompt ? (v.prompt.actor===me ? 'Your ability choice' : who(v.prompt.actor)+' is choosing') :
     match.mine ? 'Your turn' : who(foe)+(v.controllers[foe-1]==='AI'?' is playing…':'’s turn')
   const title = `<div class="heading"><div><p class="eyebrow">${v.mode==='solo'?'Single player':'Two players'} · ${match.code?'Room '+esc(match.code):'Online match'}</p><h1>Battlefield</h1></div>
-    <div class="actions">${btn('Rows & Bridge','row-guide')}${btn('Round '+v.round+' / 3','scores')}${closed ? btn('Match table','table') : btn('Leave match','leave','','quiet',match.busy)}</div></div>`
+    <div class="actions">${btn('Combat & Bridge','row-guide')}${btn('Round '+v.round+' / 3','scores')}${closed ? btn('Match table','table') : btn('Leave match','leave','','quiet',match.busy)}</div></div>`
   function row(p, r) {
     const units = v.players[p-1].rows[r-1], markers = placing && p === legal.side
     const slot = pos => {
@@ -28,24 +28,25 @@ export function board(match, catalog, metrics, selected) {
     const content = units.map((u,i) => {
       const stat = metrics.units[u.u]
       return (markers ? slot(i+1) : '') + cardFace(cards[u.c], 'unit', u.u,
-        stat.strength+' STR', false, stat.cross ? 'Bridge chain' : stat.chain ? 'Chain '+stat.chain : cards[u.c].bridge && !u.dis ? 'Bridge' : '', u.hp)
+        {strength:stat.strength, hp:u.hp, suppressed:u.dis,
+          spent:u.spent, status:stat.cross ? 'Bridge chain' : stat.chain ? 'Chain '+stat.chain : ''})
     }).join('') + (markers ? slot(units.length+1) : '')
-    const total = units.reduce((n,u)=>n+metrics.units[u.u].strength,0)
-    return `<div class="lane ${markers?'placing':''}"><div class="row-name"><strong>${rowName(r)}</strong><small>${total} STR</small></div>
+    const role = r===1 ? 'Guards Back' : 'Support'
+    return `<div class="lane ${markers?'placing':''}"><div class="row-name"><strong>${rowName(r)}</strong><small>${role}</small></div>
       <div class="row-cards scroll" data-scroll="lane-${p}-${r}">${content || '<span class="empty">Empty row</span>'}</div></div>`
   }
   function markersHint(p) {
     if (!placing || p!==legal.side) return ''
-    const text=picked.bridge?'Bridge joins the two right ends. Continue a run of 3 or more printed ranks, stepping up or down by one.':
+    const text=picked.bridge?'Bridge joins the two right ends. Connect at least three units whose base Strength steps up or down by one.':
       metrics.slots?.[1]?.[0]?.bonus?'Back row bonus · '+metrics.slots[1][0].bonus:
-      'Both rows score. Units in the same row can be hit together.'
+      'Front screens Back and counters. Back stays sheltered while Front holds.'
     return '<p class="placement-note">'+esc(text)+'</p>'
   }
   function side(p) {
     const pl=v.players[p-1], faction=catalog.factions.find(f=>f.id===pl.faction)
     const score=v.finished && v.history.length ? v.history.at(-1).scores[p-1] : metrics.scores[p-1]
     return `<section class="side f-${pl.faction}"><div class="side-head"><div><b>${who(p)}</b> · ${esc(faction.label)} <small>(${esc(pl.name)})</small></div>
-      <b>${score} STR</b></div><div class="piles"><span>${pl.wins} round wins${pl.passed?' · Passed':''}</span><span>Deck ${pl.deck}</span><span>Hand ${pl.hand}</span></div>
+      <b>${score} enemy KO${score===1?'':'s'}</b></div><div class="piles"><span>${pl.wins} round wins${pl.passed?' · Passed':''}</span><span>${v.finished ? v.history.at(-1)?.damage?.[p-1]??0 : pl.damage??0} damage</span><span>${pl.passed || v.finished ? 0 : Math.max(0,catalog.roundTurns-(pl.roundTurns??0))} turns left</span><span>Deck ${pl.deck}</span><span>Hand ${pl.hand}</span></div>
       ${markersHint(p)}
       ${(p===me?[1,2]:[2,1]).map(r=>row(p,r)).join('')}
       <button class="discard-pile" data-action="pile" data-value="${p}" aria-label="${who(p)} discard pile, ${pl.discard.length} cards">
@@ -56,20 +57,23 @@ export function board(match, catalog, metrics, selected) {
   }
   const drawText = draws.map(d => d.cards ? 'You drew '+d.cards.map(c=>name(cards[c.c])).join(', ') : who(d.seat)+' drew '+d.n+' card'+(d.n===1?'':'s')).join(' · ')
   const lastCard = v.last && cards[v.last.c]
-  const recent = match.log.slice(-3).reverse().map(line=>'<li>'+esc(line)+'</li>').join('')
+  const recent = match.log.slice(-3).reverse().map(line=>'<li>'+esc(eventText(line))+'</li>').join('')
   return title+`<div class="battle-grid"><div class="battlefield">${side(foe)}<div class="battle-line"><span>Battle line</span></div>${side(me)}</div>
     <aside class="command"><p class="eyebrow">Round ${v.round}</p><h2 aria-live="polite">${esc(turn)}</h2>
     ${v.prompt?.kind && match.ready ? btn('Resolve ability','choice','','primary') : ''}
+    ${can && !placing ? '<p class="hint">Play a card from your hand or choose a ready unit to attack. Passing ends your round.</p>' : ''}
     ${placing ? '<p class="hint">Place '+esc(name(picked))+' on a gold marker in '+(legal.side===me?'your':'the opposing')+' rows.</p>' : ''}
     ${can && legal?.ok && (picked.type==='Effect'||picked.replaces) ? btn(picked.replaces?'Play onto '+name(cards[picked.replaces]):'Play effect','play','','primary') : ''}
+    ${can && Object.keys(metrics.attacks).length ? btn('Attack with a unit','attackers','','primary') : ''}
     ${can && metrics.school ? btn('School of Goldfish','school') : ''}
     ${can && v.extra ? btn('End extra plays','end') : ''}
     ${can ? btn('Pass this round','pass') : ''}
+    ${v.history.length ? '<p class="hint">Round '+v.history.at(-1).round+' · '+(v.history.at(-1).winner ? who(v.history.at(-1).winner)+' won by '+esc(v.history.at(-1).reason) : 'Draw')+'</p>' : ''}
     <hr><div class="section-line"><h3>Battle record</h3>${btn('View all','history','','text-button')}</div>
-    ${lastCard ? '<p class="last-played">Last played · <b>'+esc(name(lastCard))+'</b></p>' : ''}
+    ${v.lastAttack ? '<p class="last-played">'+esc(v.lastAttack)+'</p>' : lastCard ? '<p class="last-played">Last played · <b>'+esc(name(lastCard))+'</b></p>' : ''}
     <ul class="events" aria-live="polite">${recent}</ul>${drawText ? '<p class="hint">'+esc(drawText)+'</p>' : ''}</aside>
     <section class="hand"><div class="section-line"><h2>Your hand</h2><span>${hand.length} cards</span></div>
-    <div class="hand-scroll scroll" data-scroll="hand">${hand.map(u=>cardFace(cards[u.c],'hand',u.u,'',u.u===selected,fresh.has(u.u)?'New draw':'')).join('') || '<p>Hand empty</p>'}</div></section></div>`
+    <div class="hand-scroll scroll" data-scroll="hand">${hand.map(u=>cardFace(cards[u.c],'hand',u.u,{selected:u.u===selected,status:fresh.has(u.u)?'New draw':''})).join('') || '<p>Hand empty</p>'}</div></section></div>`
 }
 
 const labels = {damage:'Deal damage',debuff:'Reduce strength',buff:'Increase strength',heal:'Restore health',
@@ -83,16 +87,19 @@ export function choices(view, catalog, metrics) {
   const q=view.prompt, ctx=q.context, cards=catalog.cards
   const known=new Map(view.players.flatMap(p=>p.rows.flat()).map(u=>[u.u,u]))
   const label=c=>name(cards[c.c])
-  const chain=ids=>ids.map(id=>label(known.get(id))+' #'+id).join(' → ')
+  const chain=ids=>ids.map(id=>{
+    const pos=metrics.units[id]
+    return label(known.get(id))+' ('+rowName(pos.row)+' '+pos.pos+')'
+  }).join(' → ')
   const title=labels[ctx.op] || 'Resolve ability'
   const subtitle=[ctx.unit && label(ctx.unit), ctx.cards && (ctx.bottom?'From the bottom · ':'Examined · ')+ctx.cards.map(label).join(', '),
     q.kind==='bottom_order' && 'Choose the next card in bottom-of-deck draw order.',ctx.row && rowName(ctx.row)+' row'].filter(Boolean).join(' · ')
   const options=q.options.map((o,i)=>{
     let text, detail='', image=''
     if (o.c) {
-      text=label(o)+' #'+o.u
+      text=label(o)
       const pos=metrics.units[o.u]
-      detail=pos ? (pos.seat===view.seat?'Your':'Opposing')+' '+rowName(pos.row)+' · Position '+pos.pos+' · '+pos.strength+' STR · '+known.get(o.u).hp+' HP' : cards[o.c].text
+      detail=pos ? (pos.seat===view.seat?'Your':'Opposing')+' '+rowName(pos.row)+' · Position '+pos.pos+' · '+pos.strength+' STR · '+known.get(o.u).hp+'/'+cards[o.c].health+' HP' : cards[o.c].text
       if (o.chain) detail+=' · '+chain(o.chain.units)
       image=art(cards[o.c])
     } else if (o.units) { text=chain(o.units); detail=o.cross?'Bridge chain':o.direction+' chain' }

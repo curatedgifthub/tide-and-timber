@@ -155,14 +155,14 @@ test("Halfling Courier automatically draws the exact top copy in Back only",func
     integrity(m,c)
   end
 end)
-test("Printed-rank Bridge after insertion, once per deployment, current Strength scoring",function()
+test("Printed-rank Bridge after insertion, once per deployment, chain attack bonus",function()
   local s=M.new(cfg(),77).state;s.active=2
   unit(s,2,'Water:2',1);local bridge=unit(s,2,'Water:21')
   local rank3=unit(s,2,'Water:28',2);rank3.mod=3
   s.players[2].hand={bridge,unit(s,2,'Water:1')}
   assert(not B.play(s,2,1,1,4));assert(#s.players[2].hand==2)
   assert(B.play(s,2,1,1,2));assert(Chains.qualify(s.players[2],bridge,3,true))
-  assert(B.score(s,2)==9 and s.stats.chain_activated[2]==1)
+  assert(B.score(s,2)==0 and B.attack_power(s,bridge,rank3)==3 and s.stats.chain_activated[2]==1)
   B.check_chains(s);assert(s.stats.chain_activated[2]==1)
 end)
 test("Nested search choices allow explicit bottom order and find only deck cards",function()
@@ -252,6 +252,7 @@ test("Every card in the pool plays legally and its Deploy or Effect ability chan
     local id,n=card.id,card.number
     local trig=A[f] and A[f][n] or {}
     local s=setup(f,n,id);local row,pos=card.type=='Unit' and 2 or nil,card.type=='Unit' and 5 or nil
+    if id=='Fantasy:48' then row,pos=1,1 end
     if card.agent then pos=#s.players[2].rows[2]+1 end
     if not B.playable(s,1,1) then assert(allowed[id]=='unplayable',id..' '..card.name..' cannot be played')
     else
@@ -297,6 +298,7 @@ test("New Water cards: Lighthouse, Deep-Sea Diver, The White Whale, Bleached Ree
   assert(not m.prompt and #pl.deck==3 and pl.deck[3]==top,"top card untouched")
   -- The White Whale: enters with 4 unpreventable damage; opposing damage it survives gives +2.
   m,s=fresh();pl=s.players[1]
+  unit(s,1,'Water:2',2) -- light support keeps the deployment at full Health before Old Harpoon
   local whale=unit(s,1,'Water:73');pl.hand={whale,unit(s,1,'Water:1')};whale.guard=5
   assert(B.play(s,1,1,1,1));assert(whale.hp==8 and B.strength(s,whale)==7,"self-damage does not trigger Relentless")
   B.damage(s,2,whale,3);assert(whale.hp==5 and B.strength(s,whale)==9)
@@ -493,7 +495,7 @@ test("Comic edition: Dinosaur trio, Warden and Phantom, Sidekick order, Monochro
   unit(s,2,'Fantasy:5',1)
   assert(not B.play(s,1,1,1,3),"positions are counted on the opposing row");assert(B.play(s,1,1,1,2))
   local ss,sr,si=B.position(s,spy);assert(ss==2 and sr==1 and si==2 and spy.owner==2 and spy.controller==2)
-  assert(B.score(s,1)==0 and B.score(s,2)==2+spy.card.strength,"its Strength counts for the opponent")
+  assert(B.score(s,1)==0 and B.score(s,2)==0 and B.strength(s,spy)==spy.card.strength,"gifted Strength does not award a defeat")
   assert(pl.hand[#pl.hand]==loot and loot.owner==2 and loot.controller==1,"Vault Heist takes the chosen discard")
   B.damage(s,1,spy,9);assert(foe.discard[#foe.discard]==spy,"a Double Agent goes to its new owner's discard pile")
   -- Even a Fantasy deck can pull it back: Monochrome counts as every faction for discard abilities.
@@ -525,6 +527,45 @@ test("Comic edition: Dinosaur trio, Warden and Phantom, Sidekick order, Monochro
     local match=M.new(c,900+seed);local turns=0
     while not match.state.finished do assert(match:act({type='ai'}));integrity(match,c);turns=turns+1;assert(turns<200) end
   end
+end)
+test("Basic attacks respect rows, Health, protection, spending and combat victory",function()
+  local s=M.new(cfg(),200).state;s.active=1
+  local hitter=unit(s,1,'Fantasy:12',2)
+  local wall=unit(s,2,'Fantasy:23',1)
+  local medic=unit(s,2,'Super:11',2)
+  wall.guard=2
+  local start=s.turns
+  assert(not B.attack(s,1,hitter.uid,medic.uid) and not hitter.spent and start==s.turns)
+  assert(not B.attack(s,1,wall.uid,hitter.uid))
+  assert(B.attack(s,1,hitter.uid,wall.uid))
+  assert(hitter.spent and wall.hp==wall.card.health-1 and hitter.hp==hitter.card.health-1)
+  assert(s.players[1].damage==1 and s.players[2].damage==1 and B.score(s,1)==0)
+  assert(B.pass(s,2))
+  assert(not B.attack(s,1,hitter.uid,wall.uid))
+  local second=unit(s,1,'Fantasy:17',1)
+  wall.hp=1
+  assert(B.attack(s,1,second.uid,wall.uid) and B.score(s,1)==1 and not wall.hp)
+  local third=unit(s,1,'Super:24',2)
+  assert(B.attack(s,1,third.uid,medic.uid))
+  assert(third.hp==third.card.health and B.score(s,1)==2 and s.round==1)
+  assert(B.pass(s,1) and s.round_history[1].winner==1 and s.round_history[1].scores[1]==2)
+  assert(s.players[1].defeats==0 and s.players[1].damage==0)
+end)
+test("A wiped side can redeploy, support matters, and ties use actual harm or sole control",function()
+  local s=M.new(cfg(),99).state;s.active=1
+  local foe=unit(s,2,'Fantasy:12',1)
+  local big=unit(s,1,'Fantasy:48');s.players[1].hand={big}
+  assert(B.deployment_health(s,1,big.card)==math.ceil(big.card.health/2))
+  local light=unit(s,1,'Fantasy:1',2)
+  assert(B.deployment_health(s,1,big.card)==big.card.health)
+  B.damage(s,2,light,99)
+  assert(s.players[2].damage==light.card.health and s.round==1 and B.playable(s,1,1))
+  assert(B.play(s,1,1,1,1) and big.hp==math.ceil(big.card.health/2) and big.guard==2)
+  s.players[2].defeats=0
+  local winner,why=B.round_result(s);assert(winner==2 and why=='damage dealt')
+  s.players[2].damage=0;assert(B.round_result(s)==0)
+  B.damage(s,1,foe,99);s.players[1].damage=0;s.players[1].defeats=0
+  winner,why=B.round_result(s);assert(winner==1 and why=='sole surviving force')
 end)
 test("180 seeded full matches conserve selected copies across every action",function()
   local rng=U.rng(2026);local played={}

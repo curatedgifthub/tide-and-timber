@@ -1,3 +1,4 @@
+local Text=require('tabletop.card_text')
 local P=require('tabletop.paint')
 local Lib=require('tabletop.library')
 local SetupView=require('tabletop.setup_view')
@@ -222,6 +223,30 @@ function App:action(action,index)
   self.toast=nil;self.selected=nil;self.modal=nil
   if not index then self.freshCards[m.seat]={} end
 end
+function App:attackMenu(attacker)
+  local m=self.match
+  if not m:ready() or m.prompt then return end
+  local s,p=m.state,m.seat
+  local candidates=attacker and B.attack_targets(s,p) or B.units(s,p)
+  local items={}
+  for _,unit in ipairs(candidates) do
+    if attacker or B.ready(s,p,unit) then
+      local _,row,pos=B.position(s,unit)
+      local detail=(row==1 and "Front " or "Back ")..pos.."   ·   "..Text.stats(unit.card,B.strength(s,unit),unit.hp)
+      if attacker then
+        local defense=unit.negate_damage and " · Barrier" or unit.guard>0 and " · Guard "..unit.guard or ""
+        detail=detail..defense.." · Attack for "..B.attack_power(s,attacker,unit)
+      end
+      items[#items+1]=item(unit.card.display_name or unit.card.name,function()
+        if attacker then self:action({type="attack",attacker=attacker.uid,target=unit.uid})
+        else self:attackMenu(unit) end
+      end,detail,unit.card)
+    end
+  end
+  self:list(attacker and "Choose an enemy" or "Choose your attacker",
+    attacker and "Damage shown before protection. A surviving Front unit counters for half Strength, rounded down."
+      or "Each unit gets one basic attack per round.",items)
+end
 function App:matchMenu()
   local m=self.match
   local items={item("Back to the battlefield",function() self.modal=nil end)}
@@ -239,10 +264,10 @@ function App:rounds()
   local m=self.match;local s=m.state;local me=m.seat;local entries={}
   for _,r in ipairs(s.round_history) do
     entries[#entries+1]=item("Round "..r.round.."   ·   "..r.scores[me].." to "..r.scores[3-me],nil,
-      r.winner==0 and "Tied round" or self:who(r.winner).." won")
+      r.winner==0 and "Tied round" or self:who(r.winner).." won"..(r.reason and " by "..r.reason or ""))
   end
-  if not s.finished then entries[#entries+1]=item("Round "..s.round.."   ·   "..B.score(s,me).." to "..B.score(s,3-me),nil,"In progress") end
-  self:list("Round scores","You to "..self:who(3-me):lower().."   ·   "..s.players[me].wins.." to "..s.players[3-me].wins.." round wins",entries)
+  if not s.finished then entries[#entries+1]=item("Round "..s.round.."   ·   "..B.score(s,me).." to "..B.score(s,3-me),nil,"In progress · tied defeats use damage, then sole surviving force") end
+  self:list("Round defeats","You to "..self:who(3-me):lower().."   ·   "..s.players[me].wins.." to "..s.players[3-me].wins.." round wins",entries)
 end
 function App:result()
   local m=self.match;local s=m.state;local me=m.seat
@@ -253,7 +278,7 @@ function App:result()
   elseif s.winner==0 then title="The match is drawn"
   elseif s.winner==me then title="You win the match"
   else title=self:who(3-me).." wins the match" end
-  self:list(title,#rows>0 and "Round scores, you first     "..table.concat(rows,"     /     ") or "No round was completed.",{
+  self:list(title,#rows>0 and "Enemy units defeated, you first     "..table.concat(rows,"     /     ") or "No round was completed.",{
     item("Back to the match table",function() self:closeMatch() end,"Keep your deck and start another match"),
     item("Review battlefield",function() self.modal=nil end,"Inspect the record, both discard piles, and round scores")})
 end
@@ -261,7 +286,7 @@ function App:log()
   local entries={}
   local log=self.match.state.log
   for i=#log,1,-1 do
-    local msg=log[i];entries[#entries+1]=item("Event "..i,function()
+    local msg=Text.event(log[i]);entries[#entries+1]=item("Event "..i,function()
       self:list("Event "..i,msg,{item("Back to battle record",function() self:log() end)})
     end,msg)
   end
@@ -274,8 +299,8 @@ function App:pile(p,zone)
     local fresh=zone=="hand" and self.freshCards[p][u.uid]
     local entry=item(u.card.name..(fresh and "   ·   NEW DRAW" or ""),function()
       self:list(u.card.name,u.card.text,{item("Back to "..zone,function() self:pile(p,zone) end,
-        u.card.id.."   ·   "..u.card.rarity..(u.card.strength and "   ·   "..u.card.strength.." STR   "..u.card.health.." HP" or "   ·   Effect"),u.card)})
-    end,u.card.id.."   ·   "..u.card.type.."   ·   #"..u.uid,u.card)
+        Text.stats(u.card),u.card)})
+    end,Text.stats(u.card),u.card)
     if fresh then table.insert(entries,1,entry) else entries[#entries+1]=entry end
   end end
   self:list(self:who(p).."   /   "..(zone=="hand" and "Hand" or "Discard pile"),
@@ -297,13 +322,17 @@ function App:promptDialog()
     local u=type(v)=="table" and (v.unit or v.card and v)
     local title,detail,card
     if u then
-      card=u.card;title=card.name.."   #"..u.uid
+      card=u.card;title=card.name
       local p,r,pos=B.position(m.state,u)
-      detail=p and (self:who(p).."   ·   "..(r==1 and "Front" or "Back").." position "..pos.."   ·   "..B.strength(m.state,u).." STR   "..u.hp.." HP")
-        or (card.id.."   ·   "..card.type.."   ·   "..card.text)
+      detail=p and (self:who(p).."   ·   "..(r==1 and "Front" or "Back").." position "..pos.."   ·   "..Text.stats(card,B.strength(m.state,u),u.hp))
+        or card.text
     elseif q.kind=="chain" then
       local nums={};local names={}
-      for _,u2 in ipairs(v.units) do nums[#nums+1]=u2.card.strength;names[#names+1]=u2.card.name.." #"..u2.uid end
+      for _,member in ipairs(v.units) do
+        local _,row,pos=B.position(m.state,member)
+        nums[#nums+1]=member.card.strength
+        names[#names+1]=member.card.name.." ("..(row==1 and "Front " or "Back ")..pos..")"
+      end
       title=table.concat(nums," – ")..(v.cross and "   ·   Bridge" or "");detail=table.concat(names," / ")
     elseif q.kind=="row" then title=v==1 and "Front row" or "Back row";detail=ctx.enemy and "Opposing battlefield" or "Select this row"
     elseif q.kind=="amount" then title=tostring(v)..(ctx.op=="heal" and " HP" or " cards")

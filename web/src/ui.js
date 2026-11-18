@@ -9,17 +9,26 @@ export function btn(label, action, value = '', style = '', disabled = false) {
 export function art(card) {
   return `<img loading="lazy" decoding="async" src="${esc(card.art)}" alt="">`
 }
-export function cardFace(card, action, value, stats = '', selected = false, flags = '', hp = null) {
+export const eventText = line => line.replace(/#\d+/g, '')
+export function cardFace(card, action, value, options = {}) {
+  const {strength = card.strength, hp = card.health, selected, status, suppressed} = options
+  const labels = [card.bridge && !suppressed && status !== 'Bridge chain' && 'Bridge', status, options.spent && 'Attack used'].filter(Boolean)
+  const stats = card.type === 'Unit'
+    ? `<span class="card-stats"><span aria-label="Strength ${strength}">${strength} STR</span>
+       <b class="unit-hp${hp < card.health ? ' wounded' : ''}" aria-label="Health ${hp} of ${card.health}">${hp}/${card.health} HP</b></span>`
+    : '<small class="type">Effect</small>'
   return `<button class="card-face f-${esc(card.faction)} ${selected?'selected':''}" data-action="${esc(action)}" data-value="${esc(value)}">
-    <span class="card-image">${art(card)}<span class="rank" title="Printed rank">${hp!=null?'R':''}${esc(card.strength ?? '✦')}</span>${hp!=null ? '<b class="unit-hp'+(hp<card.health?' wounded':'')+'" aria-label="Health '+esc(hp)+' of '+esc(card.health)+'">'+esc(hp)+' HP</b>' : ''}${flags ? '<small class="flag">'+esc(flags)+'</small>' : ''}</span>
-    <strong>${esc(name(card))}</strong><small>${esc(stats || (card.type === 'Unit' ? card.health+' HP · Unit' : 'Effect'))}</small></button>`
+    <span class="card-image">${art(card)}</span><span class="card-caption"><strong>${esc(name(card))}</strong>${stats}
+    ${labels.length ? '<small class="flag">'+esc(labels.join(' · '))+'</small>' : ''}</span></button>`
 }
 export function inspect(card, unit, metrics) {
   const state = unit && metrics?.units[unit.u]
-  const tags = [state?.chain && 'Chain '+state.chain, state?.cross && 'Bridge chain', unit?.ch && 'Chain used',
+  const tags = [state?.cross ? 'Bridge chain' : state?.chain && 'Chain '+state.chain, unit?.ch && 'Chain used', unit?.spent && 'Attack used',
     unit?.g && 'Guard '+unit.g, unit?.dis && 'Suppressed', unit?.nd && 'Barrier'].filter(Boolean)
+  const strength = state?.strength ?? card.strength
   return `<div class="inspection f-${esc(card.faction)}"><div class="portrait">${art(card)}</div>
-    <p class="eyebrow">${esc(card.id)} · ${esc(card.rarity)} · ${esc(card.type)}</p>
-    ${card.type==='Unit' ? `<dl class="numbers"><div><dt>Rank</dt><dd>${card.strength}</dd></div><div><dt>Strength</dt><dd>${state?.strength ?? card.strength}</dd></div><div><dt>Health</dt><dd>${unit?.hp ?? card.health}/${card.health}</dd></div></dl>` : ''}
+    <h2 id="dialog-title">${esc(name(card))}</h2>
+    ${card.type==='Unit' ? `<dl class="numbers"><div><dt>Strength</dt><dd>${strength}${strength!==card.strength ? ' <small>(base '+card.strength+')</small>' : ''}</dd></div><div><dt>Health</dt><dd>${unit?.hp ?? card.health}/${card.health}</dd></div></dl>` : '<small>Effect</small>'}
+    ${!unit && card.strength>=5 && !card.replaces ? '<p class="hint">Heavy · Field an ally with base Strength 1–3 to deploy at full Health. Otherwise this unit enters at '+Math.ceil(card.health/2)+'/'+card.health+' HP.</p>' : ''}
     <p class="rules">${esc(card.text)}</p>${tags.length ? '<p>'+esc(tags.join(' · '))+'</p>' : ''}</div>`
 }

@@ -9,7 +9,7 @@ return function(receiver, payload)
   local view = assert(json.decode(payload or receiver))
   local state = Mirror.new():apply(view)
   local seat = view.seat
-  local info = {scores={}, units=json.object({}), hand={}, school=Battle.can_school(state,seat)}
+  local info = {attacks=json.object({}),scores={}, units=json.object({}), hand={}, school=Battle.can_school(state,seat)}
   for p, player in ipairs(state.players) do
     info.scores[p] = Battle.score(state,p)
     for r, row in ipairs(player.rows) do
@@ -25,10 +25,19 @@ return function(receiver, payload)
       end
     end
   end
+  for _, attacker in ipairs(Battle.units(state,seat)) do
+    if Battle.ready(state,seat,attacker) then
+      local choices={}
+      for _,target in ipairs(Battle.attack_targets(state,seat)) do
+        choices[#choices+1]={target=target.uid,power=Battle.attack_power(state,attacker,target)}
+      end
+      if #choices>0 then info.attacks[tostring(attacker.uid)]=choices end
+    end
+  end
   for i, unit in ipairs(state.players[seat].hand) do
     local ok, reason = Battle.playable(state,seat,i)
     local side=Battle.deploy_side(seat,unit.card)
-    info.hand[i] = {ok=ok, reason=reason, side=side}
+    info.hand[i] = {ok=ok, reason=reason, side=side,deployHp=Battle.deployment_health(state,side,unit.card)}
     if ok and unit.uid==view.previewUid and unit.card.type=='Unit' and not unit.card.replaces then
       info.slots={{},{}}
       for r,row in ipairs(state.players[side].rows) do

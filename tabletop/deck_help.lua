@@ -40,11 +40,11 @@ function Help.describe(card,deck)
       for _,name in ipairs(op.names or {}) do
         for _,c in ipairs(Cards[card.faction]) do if c.name==name then add(c.id) end end
       end
-      if op.op=='recover' and #names==0 then
+      if (op.op=='recover' or op.op=='grave_whisper') and #names==0 then
         local n=0
         for _,id in ipairs(deck) do
           local c=Cards.by_id[id]
-          if (op.target=='any' or op.target==c.faction..c.type or c.wild and op.target:sub(-#c.type)==c.type)
+          if (op.op=='grave_whisper' and c.type=='Unit' or op.target=='any' or op.target==c.faction..c.type or c.wild and op.target and op.target:sub(-#c.type)==c.type)
               and (not op.max_printed or c.strength<=op.max_printed) then n=n+1 end
         end
         return n..' tagged '..(n==1 and 'card matches' or 'cards match')..' this recovery.'

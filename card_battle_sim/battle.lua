@@ -433,8 +433,47 @@ end
 local function take_named(piles,id)
   for _,pile in ipairs(piles) do
     for i,unit in ipairs(pile) do
-      if unit.card.id==id then return table.remove(pile,i) end
+      if unit.card.id==id then return table.remove(pile,i),pile end
     end
+  end
+end
+-- Only the controller receives these options. A deck search discloses eligible
+-- designs, never the shuffle order, and moves the selected physical copy.
+local function grave_whisper(s,actor,source,op)
+  local pl=s.players[actor]
+  if #pl.hand>=s.max_hand then return end
+  local choices={discard={},deck={}}
+  local zones={}
+  for _,zone in ipairs({'discard','deck'}) do
+    for _,u in ipairs(pl[zone]) do
+      if u.card.type=='Unit' and u.card.strength<=op.max_printed and (zone=='deck' or not u.recovered) then
+        table.insert(choices[zone],u)
+      end
+    end
+    if #choices[zone]>0 then zones[#zones+1]=zone end
+  end
+  if #zones==0 then draw(s,actor,1,source);return end
+  local zone=#zones==1 and zones[1] or B.choose(s,actor,'zone',zones,{op='grave_zone'})
+  if zone=='deck' then
+    table.sort(choices.deck,function(a,b)
+      if a.card.name==b.card.name then return a.uid<b.uid end
+      return a.card.name<b.card.name
+    end)
+  end
+  local chosen=B.choose(s,actor,'card',choices[zone],{op=zone=='deck' and 'grave_search' or 'grave_recover'})
+  U.remove(pl[zone],chosen)
+  chosen.controller=actor
+  pl.hand[#pl.hand+1]=chosen
+  if zone=='deck' then
+    s.rng:shuffle(pl.deck)
+    measure(s,source,'searched')
+    s.stats.drawn[actor]=s.stats.drawn[actor]+1
+    emit(s,source.card.name..' takes a unit from the draw deck and shuffles.')
+    if s.on_draw then s.on_draw({seat=actor,source=source.card.name,cards={chosen},before=#pl.deck+1,remaining=#pl.deck,requested=1}) end
+  else
+    chosen.recovered=s.combat or nil
+    measure(s,source,'recovered')
+    emit(s,source.card.name..' recovers '..chosen.card.name..'.')
   end
 end
 function B.resolve(s,actor,source,operations,context)
@@ -578,6 +617,7 @@ function B.resolve(s,actor,source,operations,context)
         if op.draw_if_printed_le and last_target and last_target.card.strength<=op.draw_if_printed_le then draw(s,actor,1,source) end
         if op.draw_if_destroyed and last_target and not is_deployed(s,last_target) then draw(s,actor,op.draw_if_destroyed,source) end
       elseif name=='search' then search_deck(s,actor,amount,op.target,op.shuffle or amount>=9999,op.from_bottom,source)
+      elseif name=='grave_whisper' then grave_whisper(s,actor,source,op)
       elseif name=='recover' then
         local n=recover(s,actor,amount,function(c)return op_predicate(c,op.target,op)end,op.optional)
         measure(s,source,'recovered',n)
@@ -752,15 +792,17 @@ function B.resolve(s,actor,source,operations,context)
           B.resolve(s,actor,source,A.get(card.card,'play'),{}) end
       elseif name=='extras' then play_extra(s,actor,op.n)
       elseif name=='showdown' then
-        local pl=s.players[actor]
+        local pl,foe=s.players[actor],s.players[other(actor)]
         local arrived={}
         for _,id in ipairs(op.characters) do
           local piles={pl.deck,pl.hand}
-          local unit=take_named(piles,id)
-          if not unit and C.by_id[id].repel then
-            for i,c in ipairs(pl.discard) do if c.card.id==id and not c.recovered then
-              unit=table.remove(pl.discard,i);unit.recovered=s.combat or nil;measure(s,source,'recovered');break
-            end end
+          if C.by_id[id].repel then
+            piles={pl.deck,pl.hand,pl.discard,foe.discard,foe.hand,foe.deck}
+          end
+          local unit,origin=take_named(piles,id)
+          if unit and (origin==pl.discard or origin==foe.discard) then
+            unit.recovered=s.combat or nil
+            measure(s,source,'recovered')
           end
           if unit then
             prepare_unit(s,unit,actor)
@@ -1000,10 +1042,13 @@ local function can_reinforce(s,p)
   for i=1,#s.players[p].hand do if eligible_card(s,p,i) then return true end end
   return false
 end
--- Only the exposed enemy row can be targeted by a basic attack.
+-- Rows compact after moves and deaths. Current positions determine cover.
 function B.attack_targets(s,p)
   local rows=s.players[other(p)].rows
-  return #rows[1]>0 and rows[1] or rows[2]
+  local targets={}
+  for _,u in ipairs(rows[1]) do targets[#targets+1]=u end
+  for i=#rows[1]+1,#rows[2] do targets[#targets+1]=rows[2][i] end
+  return targets
 end
 function B.support(s,u)
   local back=s.players[u.controller].rows[2]
@@ -1014,7 +1059,9 @@ function B.support(s,u)
   return 0
 end
 function B.attack_power(s,u,target)
-  local power=score_current(s,u)+B.support(s,u)
+  local _,row=B.position(s,u)
+  local base=score_current(s,u)
+  local power=(row==2 and math.ceil(base/2) or base)+B.support(s,u)
   if Chains.eligible(u.card) and Chains.qualify(s.players[u.controller],u,3,false) then power=power+1 end
   if u.disabled then return power end
   local trait=u.card.strike

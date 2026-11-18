@@ -17,7 +17,7 @@ return function(receiver, payload)
     info.scores[p] = Battle.score(state,p)
     for r, row in ipairs(player.rows) do
       for pos, unit in ipairs(row) do
-        info.units[tostring(unit.uid)] = {strength=Battle.strength(state,unit),seat=p,row=r,pos=pos}
+        info.units[tostring(unit.uid)] = {strength=Battle.strength(state,unit),seat=p,row=r,pos=pos,cover=Placement.cover(player,r,pos)}
       end
     end
     for _, chain in ipairs(Chains.find(player)) do

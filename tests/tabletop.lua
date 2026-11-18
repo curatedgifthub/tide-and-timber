@@ -352,7 +352,7 @@ test("Showdown retrieves available characters together and Repel only recovers G
     if scenario=='all' then pl.deck={hero};pl.hand[2]=heroine;pl.discard={gunner}
     elseif scenario=='partial' then pl.discard={heroine,gunner}
     elseif scenario=='prefer hand' then pl.hand[2]=gunner;pl.discard={unit(s,1,'Super:32')}
-    else pl.discard={hero,heroine};s.players[2].discard={unit(s,2,'Super:32')} end
+    else pl.discard={hero,heroine};unit(s,2,'Super:32',2) end
     local plays=s.stats.played[1]
     assert(B.play(s,1,1))
     assert(s.stats.played[1]==plays+1 and #Chains.find(pl)==0)
@@ -424,7 +424,7 @@ test("Comic edition: Dinosaur trio, Warden and Phantom, Sidekick order, Monochro
   local rex=unit(s,1,'Super:73');pl.deck={unit(s,1,'Super:2'),rex,unit(s,1,'Super:3')}
   local e1,e2=unit(s,2,'Fantasy:1',2),unit(s,2,'Fantasy:5',2);local hp1,hp2=e1.hp,e2.hp
   unit(s,1,'Super:3',2) -- light support for Dan
-  unit(s,2,'Fantasy:48',1).guard=20 -- keep both Dans’ basic attacks out of the measured Back row
+  for i=1,2 do unit(s,2,'Fantasy:48',1).guard=20 end -- cover both measured Back positions
   pl.hand={unit(s,1,'Super:71'),unit(s,1,'Super:72'),unit(s,1,'Super:12'),unit(s,1,'Super:12')}
   assert(B.play(s,1,1,1,1));assert(#pl.deck==3 and not B.position(s,rex),"one Dan alone summons nothing")
   turn(s);assert(B.play(s,1,1,1,2))
@@ -451,6 +451,7 @@ test("Comic edition: Dinosaur trio, Warden and Phantom, Sidekick order, Monochro
   unit(s,1,'Super:12',1);unit(s,1,'Super:24',1)
   assert(B.play(s,1,2,1,2));turn(s)
   local a,b,big=unit(s,2,'Fantasy:1',1),unit(s,2,'Fantasy:5',2),unit(s,2,'Fantasy:48',2);local bigHp=big.hp
+  unit(s,2,'Fantasy:1',1) -- cover the second Back unit
   assert(B.playable(s,1,1));assert(B.play(s,1,1))
   local ps,pr,pi=B.position(s,phantom);assert(ps==1 and pr==1 and pi==2,"takes the Warden's place")
   assert(not B.position(s,warden) and pl.discard[#pl.discard]==warden and not warden.hp)
@@ -591,7 +592,7 @@ test("Wounded heal targets, recovery fallback, and an exhausted seat waiting for
   end
   B.resolve(s,1,healer,A.get(healer.card,'deploy'))
   assert(hurt.hp==4 and healthy.hp==healthy.card.health)
-  local acolyte=unit(s,1,'Fantasy:21');local top=s.players[1].deck[#s.players[1].deck]
+  local acolyte=unit(s,1,'Fantasy:21');local top=unit(s,1,'Fantasy:31');s.players[1].deck={top}
   B.resolve(s,1,acolyte,A.get(acolyte.card,'deploy'))
   assert(s.players[1].hand[#s.players[1].hand]==top)
   local q=s.players[2];q.hand={unit(s,2,'Super:66')};q.deck={unit(s,2,'Super:61'),unit(s,2,'Super:66')}
@@ -611,6 +612,98 @@ test("No turn cutoff or KO tiebreak and both deck builders use actual tagged par
   assert(help.describe(L.cards.by_id['Water:4'],{'Water:4','Water:2','Water:6'}):find('2 other',1,true))
   assert(help.describe(L.cards.by_id['Water:66'],{'Water:31'}):find('Tag more',1,true))
   assert(help.describe(L.cards.by_id['Fantasy:21'],{'Fantasy:31','Fantasy:16'}):find('1 tagged',1,true))
+end)
+test("Spy's stolen Grave Acolyte chooses either personal pile across factions",function()
+  local View=require('online.view')
+  for _,zone in ipairs({'discard','deck'}) do
+    local m=M.new(cfg(),43);local s=m.state;local pl,foe=s.players[1],s.players[2]
+    local acolyte=unit(s,2,'Fantasy:21');acolyte.home=2
+    local spy=unit(s,1,'Super:78');spy.home=1
+    pl.hand={spy};foe.discard={acolyte}
+    s.active=1;assert(B.play(s,1,1,1,1))
+    assert(pl.hand[1]==acolyte and acolyte.owner==2 and acolyte.controller==1)
+    local function pile()
+      return {unit(s,1,'Super:15'),unit(s,1,'Water:1'),unit(s,1,'Fantasy:1'),unit(s,1,'Super:70'),unit(s,1,'Super:66')}
+    end
+    pl.deck=pile();pl.discard=pile()
+    local blocked=unit(s,1,'Super:32');blocked.recovered=true;pl.discard[#pl.discard+1]=blocked
+    local target=pl[zone][2]
+    m.controllers[1]='Human';s.active=1;s.plays_left=1
+    assert(m:act({type='play',index=1,row=2,pos=1}))
+    assert(m.prompt.kind=='zone' and m.prompt.actor==1)
+    assert(m:choose(zone=='discard' and 1 or 2))
+    assert(m.prompt.context.op==(zone=='discard' and 'grave_recover' or 'grave_search'))
+    assert(#m.prompt.options==3 and not View.prompt(m.prompt,2).options)
+    local pick
+    for i,c in ipairs(m.prompt.options) do if c==target then pick=i end end
+    assert(m:choose(assert(pick)) and pl.hand[#pl.hand]==target and s.active==2)
+    assert(not U.contains(pl[zone],target) and target.controller==1 and target.owner==1)
+    B.damage(s,2,acolyte,99)
+    assert(U.contains(foe.discard,acolyte) and acolyte.owner==2)
+    assert(B.pass(s,2) and s.round==2)
+    assert(U.contains(foe.deck,acolyte) or U.contains(foe.hand,acolyte))
+    assert(spy.owner==1 and spy.controller==1)
+  end
+end)
+test("Every Showdown retrieves one physical Gunner, including a repeat on a stolen Showdown",function()
+  for side=1,2 do for _,zone in ipairs({'deck','hand','discard'}) do
+    local s=M.new(cfg(),12).state;s.active=1
+    local pl,foe=s.players[1],s.players[2]
+    for _,p in ipairs(s.players) do p.deck={};p.hand={};p.discard={} end
+    local owner=zone=='discard' and side or 2
+    local gunner=unit(s,owner,'Super:32');gunner.home=owner;gunner.recovered=true
+    gunner.controller=side
+    local pile=s.players[side][zone];pile[#pile+1]=gunner
+    local other=unit(s,2,'Fantasy:48');foe.hand[#foe.hand+1]=other
+    local first=unit(s,1,'Super:57');pl.hand[#pl.hand+1]=first
+    local spy=unit(s,1,'Super:78');pl.hand[#pl.hand+1]=spy
+    local stolen=unit(s,2,'Super:57');foe.discard[#foe.discard+1]=stolen
+    local function play(copy)
+      s.active=1;s.plays_left=1
+      for i,u in ipairs(pl.hand) do if u==copy then return assert(B.play(s,1,i,1,1)) end end
+      error('missing hand card')
+    end
+    local function occurrences()
+      local n=0
+      for _,p in ipairs(s.players) do
+        for _,z in ipairs({p.deck,p.hand,p.discard,p.rows[1],p.rows[2]}) do
+          for _,u in ipairs(z) do if u==gunner then n=n+1 end end
+        end
+      end
+      return n
+    end
+    play(first)
+    assert(pl.rows[1][1]==gunner and not U.contains(pile,gunner) and occurrences()==1)
+    assert(gunner.owner==owner and gunner.controller==1 and U.contains(foe.hand,other))
+    B.damage(s,2,gunner,99)
+    assert(U.contains(s.players[owner].discard,gunner) and gunner.recovered)
+    play(spy);assert(U.contains(pl.hand,stolen) and not U.contains(pl.hand,gunner))
+    play(stolen);assert(pl.rows[1][1]==gunner and occurrences()==1 and stolen.owner==2 and s.round==1)
+    B.resolve(s,1,first,A.get(first.card,'play'))
+    assert(#pl.rows[1]==1 and occurrences()==1)
+    assert(B.pass(s,s.active) and s.round==2)
+    local home=s.players[owner]
+    assert(gunner.owner==owner and gunner.controller==owner and (U.contains(home.hand,gunner) or U.contains(home.deck,gunner)))
+  end end
+end)
+test("Basic attacks use current column cover and halve only Back Strength before bonuses",function()
+  local s=M.new(cfg(),43).state
+  local f=unit(s,2,'Fantasy:48',1)
+  local b1=unit(s,2,'Fantasy:48',2);local b2=unit(s,2,'Fantasy:48',2)
+  local function exposed(...)
+    local options=B.attack_targets(s,1);local wanted={...}
+    assert(#options==#wanted)
+    for i,c in ipairs(wanted) do assert(options[i]==c) end
+  end
+  exposed(f,b2)
+  local attacker=unit(s,1,'Super:73',1)
+  assert(B.attack_power(s,attacker,b2)==6)
+  table.remove(s.players[1].rows[1]);table.insert(s.players[1].rows[2],attacker)
+  assert(B.attack_power(s,attacker,b2)==3)
+  attacker.mod=-1;unit(s,1,'Super:61',2)
+  assert(B.attack_power(s,attacker,b2)==4,'ceil(5/2) then +1 support')
+  B.damage(s,1,b1,99);exposed(f)
+  B.damage(s,1,f,99);exposed(b2)
 end)
 test("180 seeded full matches conserve selected copies across every action",function()
   local rng=U.rng(2026);local played={}

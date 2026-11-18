@@ -76,7 +76,7 @@ local function evaluate(s,p,index,row,pos)
     if id=='Super:57' then
       for _,character in ipairs(A.get(card,'play')[1].characters) do
         local unit=C.by_id[character]
-        if holds(mine.deck,character) or holds(mine.hand,character) or unit.repel and holds(mine.discard,character) then
+        if holds(mine.deck,character) or holds(mine.hand,character) or unit.repel and (holds(mine.discard,character) or holds(theirs.discard,character)) then
           val=val+unit.strength*1.1
         end
       end
@@ -91,7 +91,10 @@ local function evaluate(s,p,index,row,pos)
       end
     end
     if row==1 and card.health>=5 and #mine.rows[1]==0 then val=val+1.8 end
-    if row==2 and #mine.rows[1]>0 and card.health<=4 then val=val+1.8 end
+    if row==2 then
+      if mine.rows[1][pos] and card.health<=4 then val=val+1.8 end
+      if #theirs.rows[1]+#theirs.rows[2]>0 then val=val-math.floor(n/2) end
+    end
   end
   if s.round==1 then val=val-(foe-me>8 and 1.0 or 0) end
   return val

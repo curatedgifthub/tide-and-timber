@@ -138,10 +138,11 @@ function P.card(card,x,y,w,h,opt)
     if card.bridge and not opt.disabled then tags[#tags+1]="Bridge" end
     if opt.chain then tags[#tags+1]="Chain" end
   end
+  if opt.cover then tags[#tags+1]=opt.cover end
   if opt.fresh then tags[#tags+1]="New draw" end
   local nameHeight=tiny and 14 or 23
   local statHeight=tiny and 14 or 18
-  local tagHeight=#tags>0 and (tiny and 13 or 16) or 0
+  local tagHeight=(opt.hp or #tags>0) and (tiny and 13 or 16) or 0
   local footer=nameHeight+statHeight+tagHeight+(tiny and 4 or 8)
   local edge=opt.selected and P.bright or opt.chain and spec.color or P.rule
   P.box(x+2,y+3,w,h,P.black,.7);P.box(x,y,w,h,spec.ink);P.border(x,y,w,h,edge)

@@ -85,7 +85,11 @@ function Library.starter(cfg,p,size,previous)
   local deck,seen={},{}
   local spec=Library.specs[f]
   if size==Rules.max_deck_size and spec.starter30 and not previous then
-    for _,n in ipairs(spec.starter30) do deck[#deck+1]=f..':'..n end
+    for _,n in ipairs(spec.starter30) do
+      local id=f..':'..n
+      assert(not seen[id],'Duplicate starter design: '..id)
+      seen[id]=true;deck[#deck+1]=id
+    end
     assert(#deck==size and Decks.validate_selection(deck,f,Library.owned[f]))
     cfg.decks[p]=deck
     return
@@ -98,11 +102,7 @@ function Library.starter(cfg,p,size,previous)
   end
   for _,n in ipairs(order) do take(f..':'..n) end
   for _,c in ipairs(Library.collection(f)) do take(c.id) end
-  for _,c in ipairs(Library.collection(f)) do
-    for _=2,Library.owned[f][c.id] or 0 do
-      if #deck<size then deck[#deck+1]=c.id end
-    end
-  end
+  assert(#deck==size,'Not enough distinct illustrated designs for this starter')
   cfg.decks[p]=deck
 end
 

@@ -276,13 +276,13 @@ function App:pile(p,zone)
     local entry=item(u.card.name..(fresh and "   ·   NEW DRAW" or ""),function()
       self:list(u.card.name,u.card.text,{item("Back to "..zone,function() self:pile(p,zone) end,
         Text.stats(u.card),u.card)})
-    end,Text.stats(u.card)..(u.recovered and " · Recovery used this round" or ""),u.card)
+    end,Text.stats(u.card)..(u.recovered and (u.card.repel and " · Repel available" or " · Recovery used this round") or ""),u.card)
     if fresh then table.insert(entries,1,entry) else entries[#entries+1]=entry end
   end end
   self:list(self:who(p).."   /   "..(zone=="hand" and "Hand" or "Discard pile"),
     #pl[zone].." cards   ·   "..(allowed and Lib.label(pl.faction) or "Face down"),entries)
 end
-local verbs={deploy_attack="Deployment attack · choose an exposed enemy",damage="Deal damage",debuff="Reduce Strength",buff="Increase Strength",heal="Restore Health",guard="Protect a Unit",
+local verbs={grave_zone="Grave Whisper · choose a pile",grave_search="Choose a unit from your draw deck",grave_recover="Choose a unit from your discard pile",deploy_attack="Deployment attack · choose an exposed enemy",damage="Deal damage",debuff="Reduce Strength",buff="Increase Strength",heal="Restore Health",guard="Protect a Unit",
   destroy="Destroy a Unit",move="Reposition",row="Choose a row",card="Choose a card",chain="Choose a chain",resurrect="Redeploy",
   peek="Order the top cards",search="Search the draw deck",bottom_order="Order remaining cards",
   chain_activation="Resolve a chain ability",disable="Suppress an ability",copy_deploy="Copy a Deploy ability",
@@ -313,6 +313,7 @@ function App:promptDialog()
         names[#names+1]=member.card.name.." ("..(row==1 and "Front " or "Back ")..pos..")"
       end
       title=table.concat(nums," – ")..(v.cross and "   ·   Bridge" or "");detail=table.concat(names," / ")
+    elseif q.kind=="zone" then title=v=="deck" and "Draw deck" or "Discard pile"
     elseif q.kind=="row" then title=v==1 and "Front row" or "Back row";detail=ctx.enemy and "Opposing battlefield" or "Select this row"
     elseif q.kind=="amount" then title=tostring(v)..(ctx.op=="heal" and " HP" or " cards")
     elseif q.kind=="side" then title=v==m.seat and "Your battlefield" or self:who(v).."'s battlefield"
@@ -331,7 +332,7 @@ function App:promptDialog()
   end
   local desc="Your choice   ·   "..Lib.label(m.state.players[q.actor].faction)
   if ctx.op=="deploy_attack" then
-    desc=#m.state.players[3-q.actor].rows[1]>0 and "Enemy Front protects Back. Choose a Front defender." or "Front is empty. Choose a Back defender."
+    desc="Choose any Front unit or a Back unit without a defender at the same position."
   elseif ctx.op=="search" then
     local names={};for _,c in ipairs(ctx.cards) do names[#names+1]=c.card.name end
     desc=desc.."   ·   Examined "..(ctx.bottom and "from the bottom: " or "")..table.concat(names,", ")

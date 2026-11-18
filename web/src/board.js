@@ -29,9 +29,9 @@ export function board(match, catalog, metrics, selected) {
       const stat = metrics.units[u.u]
       return (markers ? slot(i+1) : '') + cardFace(cards[u.c], 'unit', u.u,
         {strength:stat.strength, hp:u.hp, suppressed:u.dis,
-          status:stat.cross ? 'Bridge chain' : stat.chain ? 'Chain '+stat.chain : ''})
+          cover:stat.cover,status:stat.cross ? 'Bridge chain' : stat.chain ? 'Chain '+stat.chain : ''})
     }).join('') + (markers ? slot(units.length+1) : '')
-    const role = r===1 ? 'Guards Back' : 'Support'
+    const role = r===1 ? 'Full strike' : 'Half strike'
     return `<div class="lane ${markers?'placing':''}"><div class="row-name"><strong>${rowName(r)}</strong><small>${role}</small></div>
       <div class="row-cards scroll" data-scroll="lane-${p}-${r}">${content || '<span class="empty">Empty row</span>'}</div></div>`
   }
@@ -39,7 +39,7 @@ export function board(match, catalog, metrics, selected) {
     if (!placing || p!==legal.side) return ''
     const text=picked.bridge?'Bridge joins the two right ends. Connect at least three units whose base Strength steps up or down by one.':
       metrics.slots?.[1]?.[0]?.bonus?'Back row bonus · '+metrics.slots[1][0].bonus:
-      'Front shields Back. The rightmost Back ally supports deployment attacks.'
+      'Front attacks at full Strength and guards its matching Back position. Back attacks at half Strength, rounded up.'
     return '<p class="placement-note">'+esc(text)+'</p>'
   }
   function side(p) {
@@ -75,7 +75,7 @@ export function board(match, catalog, metrics, selected) {
     <div class="hand-scroll scroll" data-scroll="hand">${hand.map(u=>cardFace(cards[u.c],'hand',u.u,{selected:u.u===selected,status:fresh.has(u.u)?'New draw':''})).join('') || '<p>Hand empty</p>'}</div></section></div>`
 }
 
-const labels = {deploy_attack:'Choose a target for the deployment attack',damage:'Deal damage',debuff:'Reduce strength',buff:'Increase strength',heal:'Restore health',
+const labels = {grave_zone:'Grave Whisper · choose a pile',grave_search:'Choose a unit from your draw deck',grave_recover:'Choose a unit from your discard pile',deploy_attack:'Choose a target for the deployment attack',damage:'Deal damage',debuff:'Reduce strength',buff:'Increase strength',heal:'Restore health',
   guard:'Protect a unit',destroy:'Destroy a unit',move:'Reposition a unit',row:'Choose a row',card:'Choose a card',
   chain:'Choose a chain',resurrect:'Redeploy a unit',peek:'Order the top cards',search:'Search the draw deck',
   bottom_order:'Order remaining cards',chain_activation:'Choose the next trigger',disable:'Suppress an ability',
@@ -92,7 +92,7 @@ export function choices(view, catalog, metrics) {
   }).join(' → ')
   const title=labels[ctx.op] || 'Resolve ability'
   const subtitle=[ctx.unit && label(ctx.unit), ctx.cards && (ctx.bottom?'From the bottom · ':'Examined · ')+ctx.cards.map(label).join(', '),
-    ctx.op==='deploy_attack' && (view.players[2-view.seat].rows[0].length?'Enemy Front protects Back. Choose a Front defender.':'Front is empty. Choose a Back defender.'),
+    ctx.op==='deploy_attack' && 'Choose any Front unit or a Back unit without a defender at the same position.',
     q.kind==='bottom_order' && 'Choose the next card in bottom-of-deck draw order.',ctx.row && rowName(ctx.row)+' row'].filter(Boolean).join(' · ')
   const options=q.options.map((o,i)=>{
     let text, detail='', image=''
@@ -104,6 +104,7 @@ export function choices(view, catalog, metrics) {
       if (o.chain) detail+=' · '+chain(o.chain)
       image=art(cards[o.c])
     } else if (o.units) { text=chain(o); detail=o.cross?'Bridge chain':o.direction+' chain' }
+    else if (q.kind==='zone') { text=o==='deck'?'Draw deck':'Discard pile' }
     else if (q.kind==='row') { text=rowName(o)+' row'; detail=ctx.enemy?'Opposing battlefield':'' }
     else if (q.kind==='side') text=o===view.seat?'Your battlefield':'Opposing battlefield'
     else if (q.kind==='order') { text=(o===1?ctx.cards:[...ctx.cards].reverse()).map(label).join(' → ');detail='Next draw first' }

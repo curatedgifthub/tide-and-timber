@@ -1,3 +1,4 @@
+import {starterVersion, upgradeStarters} from './draft.js'
 import {Api} from './api.js'
 import {Match} from './session.js'
 import {board, choices} from './board.js'
@@ -27,28 +28,13 @@ const deckRange = () => catalog.minDeckSize+'–'+catalog.maxDeckSize
 function loadDraft() {
   const saved = api.read('draft')
   if (saved?.seats?.length === 2 && saved.seats.every(valid) && ['solo','duel'].includes(saved.mode)) {
-    if ((saved.starterVersion || 0)<3) {
-      for (const s of saved.seats) {
-        const f=faction(s.faction)
-        // Upgrade an untouched starter. Keep deliberately tagged lists and later 20-card choices.
-        const old=f.id==='Super' ? f.previousStarter : [f.id==='Water'?43:48,1,2,3,4,21,28,31,32,40,5,6,7,8,9,10,11,12,13,15,16,17,18,19,20,23,25,29,33,39].map(n=>f.id+':'+n)
-        const expected=!saved.starterVersion && s.deck.length===20 ? old.slice(0,20) : old
-        if (s.deck.length===expected.length && expected.every((id,i)=>s.deck[i]===id)) s.deck=[...f.starter]
-      }
-      saved.starterVersion=3
-      api.save('draft',saved)
-    }
-    if (saved.starterVersion===3) {
-      for (const s of saved.seats) {
-        const f=faction(s.faction)
-        if (s.deck.length===f.previousStarter.length && f.previousStarter.every((id,i)=>s.deck[i]===id)) s.deck=[...f.starter]
-      }
-      saved.starterVersion=4
+    if ((saved.starterVersion || 0)<starterVersion) {
+      upgradeStarters(saved,faction)
       api.save('draft',saved)
     }
     return saved
   }
-  return {starterVersion:4, mode:'solo', difficulty:'normal', seats:[defaultSeat('Fantasy'),defaultSeat('Water')]}
+  return {starterVersion, mode:'solo', difficulty:'normal', seats:[defaultSeat('Fantasy'),defaultSeat('Water')]}
 }
 function message(text) {
   const toast = document.querySelector('#toast')

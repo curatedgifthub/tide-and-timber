@@ -7,6 +7,7 @@ import {join} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {Api} from '../src/api.js'
 import {Match} from '../src/session.js'
+import {upgradeStarters} from '../src/draft.js'
 import {board,choices} from '../src/board.js'
 import {cardFace,inspect} from '../src/ui.js'
 
@@ -47,6 +48,7 @@ const deck = f => ({faction:f.id, deck:f.starter})
 try {
   for (const f of catalog.factions) {
     assert.equal(f.starter.length,30)
+    assert.equal(new Set(f.starter).size,30)
     assert.equal(f.smallStarter.length,20)
   }
   for (const card of Object.values(catalog.cards)) {
@@ -56,6 +58,13 @@ try {
     assert.doesNotMatch(visible,/\b(?:rank|uncommon|rare|common)\b|(?:Super|Fantasy|Water):\d+/i)
     if (card.type==='Unit') assert.ok(visible.includes(card.health+'/'+card.health+' HP'))
   }
+  const oldComic=[66,61,15,27,32,57,71,72,73,74,75,78,2,11,20,21,62,8,12,14,24,30,47,49,51,61,57,15,27,30].map(n=>'Super:'+n)
+  const custom=[...oldComic].reverse()
+  const saved={starterVersion:4,seats:[{faction:'Super',deck:[...oldComic]},{faction:'Super',deck:[...custom]}]}
+  upgradeStarters(saved,id=>catalog.factions.find(f=>f.id===id))
+  assert.deepEqual(saved.seats[0].deck,catalog.factions.find(f=>f.id==='Super').starter)
+  assert.deepEqual(saved.seats[1].deck,custom)
+  assert.equal(saved.starterVersion,5)
   let host=client(), guest=client()
   await host.open({op:'create',mode:'duel',player:{faction:catalog.factions[0].id, deck:catalog.factions[0].starter},rules:catalog.rules})
   assert.equal(host.code.length,6)

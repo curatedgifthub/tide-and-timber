@@ -29,7 +29,7 @@ local function row(app,p,r,y,chains)
   P.box(x,y,4,h,spec.color)
   P.label(app:who(p),x+14,y+10,spec.color)
   P.text(r==1 and "Front" or "Back",x+14,y+28,24,P.textColor,"serif")
-  P.text(r==1 and "Guards Back" or "Support",x+15,y+59,13,P.muted,"bold")
+  P.text(r==1 and "Full strike" or "Support",x+15,y+59,13,P.muted,"bold")
   P.line(x+94,y+9,x+94,y+79,P.rule)
   local left=x+119;local available=w-145
   if placing and app.previewUnit~=unit then
@@ -60,12 +60,13 @@ local function row(app,p,r,y,chains)
       P.line(left+available*.52,y+44,left+available*.66,y+44,P.rule,.65)
     end
   else
-    local pitch=math.min(139,(available-16)/(stop-start+1))
+    local columns=math.min(7,math.max(#pl.rows[1],#pl.rows[2]))
+    local pitch=math.min(139,(available-16)/columns)
     local cw=pitch-19
     for i=start,stop do
       local u=cards[i];local xx=left+10+(i-start)*pitch
       P.card(u.card,xx,y+3,cw,82,{chain=chains[u],linked=app.bridgeEnds[u],disabled=u.disabled,
-        strength=B.strength(s,u),hp=u.hp,selected=app.inspected==u})
+        strength=B.strength(s,u),hp=u.hp,cover=Placement.cover(pl,r,i),selected=app.inspected==u})
       if app.flash[u.uid] and app.flashTime>0 then P.border(xx-1,y+2,cw+2,84,P.bright,math.min(1,app.flashTime)) end
       if i>start and app.chainEdges[cards[i-1].uid.."/"..u.uid] then
         P.line(xx-18,y+44,xx-2,y+44,spec.color)
@@ -230,7 +231,7 @@ function V.draw(app)
       or B.deployment_health(s,me,chosen.card)<chosen.card.health and ("Deploys at 2 STR and "..B.deployment_health(s,me,chosen.card).."/"..chosen.card.health.." HP without a light ally.")
       or chosen.card.bridge and "Place at a right end to link Front and Back."
       or Placement.bonus(chosen.card,2) and "Back row bonus · "..Placement.bonus(chosen.card,2)
-      or "Front guards Back. Choose a gold marker.")
+      or "Front strikes at full Strength. Back strikes at half, rounded up.")
     or "Play a unit to place it and attack."
   local perPage=app.handPageSize
   local pages=math.max(1,math.ceil(#hand/perPage))

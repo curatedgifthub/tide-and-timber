@@ -224,7 +224,7 @@ test("Leaving, resuming after a restart, refused starts",function()
   lone:leave();assert(not host.matches[id])
   -- Refused starts explain themselves.
   local s=Session.new(c);s:start_solo({faction='Water',deck={}},{faction='Water'},host.rules)
-  assert(s.phase=='failed' and s.code_error=='invalid_deck' and s.error:find('expected 20',1,true))
+  assert(s.phase=='failed' and s.code_error=='invalid_deck' and s.error:find('at least 20',1,true))
   s=Session.new(c);s:start_solo({faction='Water',deck=deck('Water')},{faction='Water'},'old-rules')
   assert(s.phase=='failed' and s.code_error=='rules_mismatch')
 end)

@@ -65,7 +65,12 @@ function D.collection_size(faction)
   return #C[faction]+#(spec.neutral_cards or {})
 end
 function D.validate_selection(deck,faction,collection)
-  return D.validate(deck,faction,Rules.deck_size,collection)
+  local ok,why=D.validate_partial(deck,faction,Rules.max_deck_size,collection)
+  if not ok then return false,why end
+  if #deck<Rules.min_deck_size then
+    return false,'Tag at least '..Rules.min_deck_size..' cards for the match.'
+  end
+  return true
 end
 function D.counts(deck)
   local c={};for _,id in ipairs(deck) do c[id]=(c[id] or 0)+1 end;return c

@@ -17,7 +17,7 @@ The match table shows whether the game server is reachable. Both ways to play ne
 ### Single Player (Online)
 
 1. Choose **Single Player (Online)**. Use the arrows on the two faction portraits to choose your faction and the computer's.
-2. Open **Build your deck**. Click a card to inspect it and use **+** or **−** to select copies. Choose exactly 20 cards, use the faction’s **20-card starter**, or select **Random 20**.
+2. Open **Build your deck**. Click a card to inspect it and use **+** or **−** to select copies. Browse every illustrated design in your faction and tag 20–30 cards to bring to the match. The workshop offers **20-card starter**, **30-card starter**, and **Random 20**. The two players can bring different deck sizes.
 3. The computer brings its faction's 20-card starter unless you build a deck for it (the **Computer** tab in the workshop). **Normal** plays the best move it finds; **Easy** plays any legal card.
 4. **Start online match**. The server shuffles both decks, deals five cards each, and plays the computer's turns. You see each computer move one at a time.
 

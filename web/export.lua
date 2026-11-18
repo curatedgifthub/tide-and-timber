@@ -5,10 +5,12 @@ package.path = "card_battle_sim/?.lua;" .. package.path
 local library = require("tabletop.library")
 local json = require("online.json")
 local config = require("online.config")
+local rules = require("rules")
 local catalog = {
   config = {url = config.url, key = config.key},
-  deckSize = require("rules").deck_size,
-  opening = require("rules").starting_hand,
+  minDeckSize = rules.min_deck_size,
+  maxDeckSize = rules.max_deck_size,
+  opening = rules.starting_hand,
   cards = json.object({}),
   factions = {},
 }
@@ -24,6 +26,9 @@ for _, id in ipairs(library.factions) do
     emblem = spec.emblem, color = spec.color, ink = spec.ink, paper = spec.paper,
     cards = {}, limits = library.owned[id], starter = draft.decks[1],
   }
+  library.starter(draft, 1, rules.max_deck_size)
+  assert(library.valid(draft, 1))
+  faction.largeStarter = draft.decks[1]
   catalog.factions[#catalog.factions + 1] = faction
   for _, card in ipairs(library.collection(id)) do
     faction.cards[#faction.cards+1] = card.id

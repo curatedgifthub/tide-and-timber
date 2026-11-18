@@ -27,7 +27,8 @@ local function factionPlate(app,p,x)
   P.button("faction-prev-"..p,"‹",x+w-95,y+305,32,35,function() app:cycleFaction(p,-1) end)
   P.button("faction-next-"..p,"›",x+w-55,y+305,32,35,function() app:cycleFaction(p,1) end)
   local count=#cfg.decks[p]
-  local title=(p==2 and count==0) and "Computer deck    ·    20-card starter" or "Edit deck    ·    "..count.." selected"
+  local tagged=(p==2 and count==0) and "20-card starter" or count.." tagged"
+  local title="Browse "..Lib.size(faction).." designs   ·   "..tagged
   P.button("edit-"..p,title,x,y+h+14,w,43,function() app:builder(p) end,"accent")
 end
 -- In a two-player match the other seat is filled by whoever joins the room.
@@ -92,7 +93,7 @@ function View.menu(app)
     end
   end
   P.line(36,689,1245,689,P.rule)
-  local facts={{"MATCH","Best of three"},{"OPENING HAND",Rules.starting_hand.." random cards"},{"DECK","20 selected cards"},{"TURN","Draw 1 · play or pass"}}
+  local facts={{"MATCH","Best of three"},{"OPENING HAND",Rules.starting_hand.." random cards"},{"DECK",Rules.min_deck_size.."–"..Rules.max_deck_size.." tagged cards"},{"TURN","Draw 1 · play or pass"}}
   for i,v in ipairs(facts) do
     local xx=39+(i-1)*304
     if i>1 then P.line(xx-19,713,xx-19,761,P.rule) end
@@ -123,12 +124,12 @@ function View.builder(app)
   end
   for i,title in ipairs(filters) do
     local x=36+(i-1)*108
-    P.button("filter-"..title,title,x,151,101,34,function() app.filter=title;app.page=1 end,title==app.filter and "accent" or nil)
+    P.button("filter-"..title,title=="Selected" and "Tagged" or title,x,151,101,34,function() app.filter=title;app.page=1 end,title==app.filter and "accent" or nil)
     if title==app.filter then P.box(x,183,101,2,P.gold) end
   end
   local pages=math.max(1,math.ceil(#cards/8))
   app.page=math.min(pages,app.page)
-  P.one(#cards.." designs",692,157,178,15,P.muted,"sans","right")
+  P.one(#cards.." of "..Lib.size(f).." designs",625,157,245,15,P.muted,"sans","right")
   if #cards==0 then P.text("No cards in this view.",36,239,25,P.muted,"italic") end
   for k=1,8 do
     local c=cards[(app.page-1)*8+k]
@@ -139,13 +140,14 @@ function View.builder(app)
       P.hit("inspect-"..c.id,x,y,195,188,function() app.inspected=c end)
       P.button("remove-"..c.id,"−",x,y+193,43,32,function() app:edit(c,-1) end,nil,qty>0)
       P.box(x+46,y+193,103,32,P.inset);P.one(qty.." / "..enabled,x+46,y+199,103,15,P.muted,"bold","center")
-      P.button("add-"..c.id,"+",x+152,y+193,43,32,function() app:edit(c,1) end,"accent")
+      P.button("add-"..c.id,"+",x+152,y+193,43,32,function() app:edit(c,1) end,"accent",qty<enabled and #cfg.decks[p]<Rules.max_deck_size)
     end
   end
   P.button("prev","‹",36,703,40,36,function() app.page=app.page-1 end,nil,app.page>1)
   P.text("Page "..app.page.." of "..pages,88,711,16,P.muted)
   P.button("next","›",195,703,40,36,function() app.page=app.page+1 end,nil,app.page<pages)
-  P.button("starter-20","20-card starter",440,703,149,36,function() Lib.starter(cfg,p) end)
+  P.button("starter-30","30-card starter",440,703,149,36,function() Lib.starter(cfg,p,Rules.max_deck_size) end)
+  P.button("starter-20","20-card starter",282,703,149,36,function() Lib.starter(cfg,p) end)
   P.button("random","Random 20",598,703,151,36,function() Lib.random(cfg,p) end,"accent")
   P.button("clear","Clear deck",758,703,112,36,function() cfg.decks[p]={} end)
   local x,w=901,344
@@ -166,7 +168,7 @@ function View.builder(app)
   end
   P.text(c.text,x+18,top,size,P.muted,"sans",w-36)
   P.line(x+18,583,x+w-18,583,P.rule)
-  P.label("Opening hand  ·  "..Rules.starting_hand.." cards",x+18,598,P.gold)
+  P.label("Tag "..Rules.min_deck_size.."–"..Rules.max_deck_size.."   ·   Open with "..Rules.starting_hand,x+18,598,P.gold)
   local ready=true
   for n=1,seats do
     local count=#cfg.decks[n]
@@ -174,7 +176,7 @@ function View.builder(app)
     local automatic=n==2 and count==0
     ready=ready and (ok or automatic)
     P.text(seatName(cfg,n).."  ·  "..Lib.label(cfg.factions[n]),x+18,616+(n-1)*21,16,P.textColor)
-    local status=automatic and "20-card starter" or ok and (count.." total  /  "..(count-Rules.starting_hand).." in draw deck") or (count.." selected  /  need "..Rules.deck_size)
+    local status=automatic and "20-card starter" or ok and (count.." tagged  /  "..(count-Rules.starting_hand).." in draw deck") or (count.." tagged / need "..Rules.min_deck_size.."–"..Rules.max_deck_size)
     P.one(status,x+146,616+(n-1)*21,182,16,(ok or automatic) and spec.color or P.muted,"bold","right")
   end
   if ready then P.button("done","Deck ready   →",x+18,675,w-36,46,function() app.screen="menu" end,"gold")

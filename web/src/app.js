@@ -22,7 +22,8 @@ function valid(s) {
     return Object.hasOwn(f.limits,id) && counts.get(id) <= f.limits[id]
   })
 }
-const ready = s => valid(s) && s.deck.length === catalog.deckSize
+const ready = s => valid(s) && s.deck.length >= catalog.minDeckSize && s.deck.length <= catalog.maxDeckSize
+const deckRange = () => catalog.minDeckSize+'–'+catalog.maxDeckSize
 function loadDraft() {
   const saved = api.read('draft')
   if (saved?.seats?.length === 2 && saved.seats.every(valid) && ['solo','duel'].includes(saved.mode)) return saved
@@ -71,7 +72,7 @@ function plate(i) {
     <span class="specimen">No. ${String(c.number).padStart(2,'0')} · ${esc(c.rarity)}</span></div>
     <div class="plate-info"><div class="section-line"><h2>${esc(f.label)}</h2><div class="arrows">${arrow(-1,'‹')}${arrow(1,'›')}</div></div>
       <p>${esc(name(c))}</p></div>
-    ${btn('Edit deck · '+s.deck.length+' cards','workshop',i,'edit-deck')}</article>`
+    ${btn('Browse '+f.cards.length+' designs · '+s.deck.length+' tagged','workshop',i,'edit-deck')}</article>`
 }
 function lobby() {
   const solo=draft.mode==='solo', playable=ready(draft.seats[0])&&(!solo||ready(draft.seats[1]))
@@ -87,24 +88,24 @@ function lobby() {
     ${mode('solo','Single player','Play against the computer.','♟')}${mode('duel','Two players','Share a room with a friend.','♟♟')}
     ${solo ? '<div class="level"><span>AI difficulty</span><div class="seg">'+['easy','normal'].map(d=>btn(d==='easy'?'Easy':'Normal','difficulty',d,d===draft.difficulty?'on':'')).join('')+'</div></div>' :
       `<label for="room">Room code</label><input id="room" placeholder="6-character code" maxlength="6" autocapitalize="characters" autocomplete="off" spellcheck="false" value="${esc(roomInput)}">`}
-    ${!playable ? '<p class="warn">Each deck needs exactly '+catalog.deckSize+' cards.</p>' : ''}
+    ${!playable ? '<p class="warn">Tag '+deckRange()+' cards per deck to play.</p>' : ''}
     ${error?'<p class="warn" role="status">'+esc(error)+'</p>':''}
     ${expiredSignIn?btn('Create a new sign-in','replace-auth','','quiet'):!healthOK && health!=='Checking server'?btn('Retry connection','retry','','quiet'):''}
     ${solo?btn(match.busy?'Opening match…':'Start online match →','start','','primary',!live):
       btn('Create room →','create','','primary',!live)+btn('Join room','join','','full',!live || !/^[A-Z0-9]{6}$/.test(roomInput))}
     </section></div>
-    <div class="facts"><div><small>Match format</small><strong>Best of three</strong></div><div><small>Opening hand</small><strong>${catalog.opening} cards</strong></div><div><small>Battle deck</small><strong>${catalog.deckSize} cards</strong></div><div><small>Each turn</small><strong>Draw 1 · play or pass</strong></div></div>`
+    <div class="facts"><div><small>Match format</small><strong>Best of three</strong></div><div><small>Opening hand</small><strong>${catalog.opening} cards</strong></div><div><small>Battle deck</small><strong>${deckRange()} cards</strong></div><div><small>Each turn</small><strong>Draw 1 · play or pass</strong></div></div>`
 }
 function workshop() {
   const s=seat(), f=faction(s.faction), counts={}
   s.deck.forEach(id=>counts[id]=(counts[id]||0)+1)
   const visible=f.cards.filter(id=>filter==='All'||filter==='Selected'&&counts[id]||cards()[id].type===filter)
   return `<div class="heading"><div><p class="eyebrow gold">Deck workshop · ${editing?'Computer':'Your seat'}</p><h1>${esc(f.label)} collection</h1></div>${btn('← Match table','table')}</div>
-    <div class="builder-tools"><div class="section-line"><h2>${s.deck.length} / ${catalog.deckSize} cards</h2><span>${ready(s)?'Deck ready':'Select exactly '+catalog.deckSize}</span></div>
-      <div class="actions">${btn('20-card starter','fill','20')}${btn('Random 20','fill','random')}${btn('Clear deck','fill','clear')}</div></div>
-    <div class="tabs">${['All','Unit','Effect','Selected'].map(t=>btn(t==='Unit'?'Units':t==='Effect'?'Effects':t,'filter',t,t===filter?'on':'')).join('')}</div>
-    <div class="collection">${visible.map(id=>`<div class="draft-card">${cardFace(cards()[id],'catalog',id)}
-      <div class="counter">${btn('−','minus',id,'',!counts[id])}<span>${counts[id]||0} / ${f.limits[id]}</span>${btn('+','plus',id,'',counts[id]>=f.limits[id]||s.deck.length>=catalog.deckSize)}</div></div>`).join('') || '<p>No cards selected.</p>'}</div>`
+    <div class="builder-tools"><div class="section-line"><h2>${s.deck.length} tagged for the match</h2><span>${ready(s)?'Ready · ':''}Tag ${deckRange()} cards</span></div>
+      <div class="actions">${btn('20-card starter','fill','20')}${btn('30-card starter','fill','30')}${btn('Random 20','fill','random')}${btn('Clear deck','fill','clear')}</div></div>
+    <div class="tabs">${['All','Unit','Effect','Selected'].map(t=>btn(t==='All'?'All '+f.cards.length+' designs':t==='Selected'?'Tagged':t==='Unit'?'Units':'Effects','filter',t,t===filter?'on':'')).join('')}</div>
+    <div class="collection">${visible.map(id=>`<div class="draft-card">${cardFace(cards()[id],'catalog',id,'',Boolean(counts[id]))}
+      <div class="counter">${btn('−','minus',id,'',!counts[id])}<span>${counts[id]||0} / ${f.limits[id]}</span>${btn('+','plus',id,'',counts[id]>=f.limits[id]||s.deck.length>=catalog.maxDeckSize)}</div></div>`).join('') || '<p>No cards selected.</p>'}</div>`
 }
 function waiting() {
   return `<section class="room-panel"><p class="eyebrow gold">Two players · Online</p><h1>${match.status==='waiting'?'Your room is open':'Returning to your match'}</h1>
@@ -183,13 +184,13 @@ async function dispatch(action,value) {
         pool[i]=pool[j]
         pool[j]=card
       }
-      seat().deck=pool.slice(0,catalog.deckSize)
-    } else seat().deck=value==='clear'?[]:[...f.starter]
+      seat().deck=pool.slice(0,catalog.minDeckSize)
+    } else seat().deck=value==='clear'?[]:[...(value==='30'?f.largeStarter:f.starter)]
     return saveDraft()
   }
   if (action==='plus' || action==='minus') {
     const s=seat(), deck=[...s.deck], i=deck.indexOf(value)
-    if (action==='plus' && deck.length>=catalog.deckSize) return
+    if (action==='plus' && deck.length>=catalog.maxDeckSize) return
     if (action==='plus') deck.push(value)
     else if (i!==-1) deck.splice(i,1)
     if (valid({...s,deck})) s.deck=deck

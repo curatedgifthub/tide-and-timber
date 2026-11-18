@@ -2,7 +2,7 @@
 
 ## Play
 
-Open the GitHub Pages site in a current phone, tablet, or desktop browser. Both seats start with editable 20-card starters. The workshop also offers Random 20 or individual card selection. Each player opens with five cards. For a duel, choose **Two players**, then **Create room**. Share the six-character code with a LÖVE player, or send the room link to another browser player. The guest chooses a deck and selects **Join room**.
+Open the GitHub Pages site in a current phone, tablet, or desktop browser. Both seats start with editable 20-card starters. Open **Browse** to inspect every illustrated design in your faction. Use **+** and **−** to tag 20–30 cards for a match, or start from **30-card starter** or **Random 20**. The **Tagged** filter shows your selections. Each player opens with five cards. For a duel, choose **Two players**, then **Create room**. Share the six-character code with a LÖVE player, or send the room link to another browser player. The guest chooses a deck and selects **Join room**.
 
 Tap a hand card to inspect it. **Choose placement** highlights the available Front and Back row positions. **Play effect** resolves an effect. Swipe across crowded rows and the hand to see additional cards. Tap a unit for its current strength and health. Ability dialogs list the choices supplied by the server. Close a dialog to inspect the table and use **Resolve ability** to reopen it.
 

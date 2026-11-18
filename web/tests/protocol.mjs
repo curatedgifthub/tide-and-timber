@@ -44,7 +44,7 @@ function session(api) {
 const deck = f => ({faction:f.id, deck:f.starter})
 try {
   let host=client(), guest=client()
-  await host.open({op:'create',mode:'duel',player:deck(catalog.factions[0]),rules:catalog.rules})
+  await host.open({op:'create',mode:'duel',player:{faction:catalog.factions[0].id, deck:catalog.factions[0].largeStarter},rules:catalog.rules})
   assert.equal(host.code.length,6)
   host=session(host.api)
   await host.resume()
@@ -56,7 +56,7 @@ try {
   assert.equal(host.view.players[1].cards,undefined)
   for (const seat of [host,guest]) {
     assert.equal(seat.view.players[seat.view.seat-1].cards.length,5)
-    assert.equal(seat.view.players[seat.view.seat-1].deck,15)
+    assert.equal(seat.view.players[seat.view.seat-1].deck,seat===host?25:15)
   }
   const actor=host.ready?host:guest, other=actor===host?guest:host
   const token=actor.api.read('auth')

@@ -253,6 +253,11 @@ test("Refused requests: wrong turn, stale or repeated moves, strangers, bad room
       {faction='Water',deck={[1]='Water:1',[3]='Water:2'}},{deck=good.deck}}) do
     r=create({mode='duel',player=bad});assert(not r.ok and r.error=='invalid_deck',json.encode(bad))
   end
+  for _,n in ipairs({19,31}) do
+    local selected={}
+    for i=1,n do selected[i]=L.collection('Water')[i].id end
+    assert(create({mode='duel',player={faction='Water',deck=selected}}).error=='invalid_deck')
+  end
   local tooMany={faction='Water',deck=deck('Water')};for _=1,4 do table.insert(tooMany.deck,'Water:1') end
   assert(create({mode='duel',player=tooMany}).error=='invalid_deck')
   assert(create({mode='solo',player=good,ai={faction='Nope'}}).error=='invalid_deck')
@@ -276,7 +281,11 @@ test("Refused requests: wrong turn, stale or repeated moves, strangers, bad room
   assert(act(mover,{type='choose',index=1}).error=='no_choice')
   assert(act(mover,{type='advance'}).error=='not_computer_turn')
   assert(act(mover,{type='play',index=99,row=1,pos=1}).error=='illegal')
-  assert(act(mover,{type='play',index=1,row=1,pos=7}).error=='illegal' or s.players[s.active].hand[1].card.type=='Effect')
+  local unitIndex
+  for i,c in ipairs(s.players[s.active].hand) do
+    if c.card.type=='Unit' then unitIndex=i;break end
+  end
+  assert(act(mover,{type='play',index=assert(unitIndex),row=1,pos=7}).error=='illegal')
   for _,bad in ipairs({{type='play'},{type='play',index='1'},{type='play',index=1.5,row=1,pos=1},{type='cheat'},{type='ai'},{}}) do
     local e=act(mover,bad).error;assert(e=='bad_request' or e=='illegal',json.encode(bad))
   end

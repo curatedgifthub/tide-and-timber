@@ -63,7 +63,7 @@ test("The card pool is exactly the cards with their own artwork",function()
     assert(not L.edit(c,1,id,1),id.." has no artwork but was accepted")
   end
 end)
-test("Explicit editable collections, copy limits and exactly 20 cards",function()
+test("Explicit editable collections, copy limits and 20–30 tagged cards",function()
   local c=L.new();assert(not L.valid(c,1))
   assert(not L.edit(c,1,'Fantasy:71',1));assert(not L.edit(c,1,'Water:1',1))
   for _=1,3 do assert(L.edit(c,1,'Fantasy:1',1)) end
@@ -73,7 +73,15 @@ test("Explicit editable collections, copy limits and exactly 20 cards",function(
   for _,f in ipairs(L.factions) do
     c.factions[1]=f
     L.starter(c,1);assert(#c.decks[1]==20 and L.valid(c,1))
-    assert(not L.edit(c,1,f..':1',1))
+    local pool=L.collection(f)
+    local i=#pool
+    for n=21,30 do
+      while U.contains(c.decks[1],pool[i].id) do i=i-1 end
+      assert(L.edit(c,1,pool[i].id,1))
+      assert(#c.decks[1]==n and L.valid(c,1))
+    end
+    assert(not L.edit(c,1,pool[1].id,1) and #c.decks[1]==30)
+    L.starter(c,1,30);assert(#c.decks[1]==30 and L.valid(c,1))
     L.random(c,1);assert(#c.decks[1]==20 and L.valid(c,1))
     table.remove(c.decks[1]);assert(not L.valid(c,1))
   end
@@ -109,10 +117,10 @@ test("Separate shuffled instances, deterministic hands and selected-copy conserv
   integrity(m,c);B.draw(m.state,1,80);assert(#m.state.players[1].hand==20 and #m.state.players[1].deck==0)
   assert(saved==L.encode(c));integrity(m,c)
 end)
-test("Both seats need twenty cards and older drafts remain editable",function()
+test("Older over-limit drafts remain editable and short decks cannot start",function()
   local c=cfg()
-  c.decks[1][21]='Fantasy:1';assert(not L.valid(c,1))
-  local over=assert(L.decode(L.encode(c)));assert(#over.decks[1]==21 and not L.valid(over,1))
+  L.starter(c,1,30);c.decks[1][31]='Fantasy:1';assert(not L.valid(c,1))
+  local over=assert(L.decode(L.encode(c)));assert(#over.decks[1]==31 and not L.valid(over,1))
   assert(L.edit(over,1,'Fantasy:1',-1) and L.valid(over,1))
   c=cfg();table.remove(c.decks[1]);assert(not L.valid(c,1))
   assert(not pcall(M.new,c,1));local old=L.encode(c):gsub("TT2","TT1\n30")

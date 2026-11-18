@@ -71,15 +71,16 @@ function Library.edit(cfg,p,id,delta)
     return false,"This copy is outside your deck."
   end
   deck[#deck+1]=id
-  local ok,why=Decks.validate_partial(deck,cfg.factions[p],Rules.deck_size,Library.owned[cfg.factions[p]])
+  local ok,why=Decks.validate_partial(deck,cfg.factions[p],Rules.max_deck_size,Library.owned[cfg.factions[p]])
   if not ok then table.remove(deck) end
   return ok,why
 end
 
 -- A suggested selection is applied only on request. Include the faction's
 -- featured Unit and a mix of printed ranks, Bridge, recovery and combat.
-function Library.starter(cfg,p)
-  local size=Rules.deck_size
+function Library.starter(cfg,p,size)
+  size=size or Rules.min_deck_size
+  assert(size>=Rules.min_deck_size and size<=Rules.max_deck_size and size%1==0)
   local f=cfg.factions[p]
   local deck,seen={},{}
   local spec=Library.specs[f]
@@ -107,7 +108,7 @@ function Library.random(cfg,p)
     local j=math.random(i)
     deck[i],deck[j]=deck[j],deck[i]
   end
-  while #deck>Rules.deck_size do table.remove(deck) end
+  while #deck>Rules.min_deck_size do table.remove(deck) end
   cfg.decks[p]=deck
 end
 

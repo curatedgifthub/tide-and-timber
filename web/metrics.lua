@@ -10,7 +10,8 @@ return function(receiver, payload)
   if view.guideCard then
     return require("tabletop.deck_help").describe(require("data.cards").by_id[view.guideCard],view.deck) or ""
   end
-  local state = Mirror.new():apply(view)
+  local mirror = Mirror.new()
+  local state = mirror:apply(view)
   local seat = view.seat
   local info = {attackPreview=json.object({}),scores={}, units=json.object({}), hand={}, school=Battle.can_school(state,seat)}
   for p, player in ipairs(state.players) do
@@ -28,9 +29,9 @@ return function(receiver, payload)
       end
     end
   end
-  local prompt=view.prompt
+  local prompt=mirror.prompt
   if prompt and prompt.context and prompt.context.op=='deploy_attack' then
-    local source=state.last_played
+    local source=prompt.context.unit
     if source then
       for _,target in ipairs(Battle.attack_targets(state,seat,source)) do
         info.attackPreview[tostring(target.uid)]=Battle.attack_power(state,source,target)

@@ -388,7 +388,7 @@ local function play_extra(s,actor,n)
   s.plays_left=s.plays_left+n
   emit(s,s.players[actor].name..' gains '..n..' additional card play(s) this turn.')
 end
-local enter
+local showdown
 local function op_predicate(card,kind,operation)
   local c=card.card
   if kind=='any' then return true end
@@ -406,7 +406,7 @@ local function prepare_unit(s,c,side)
   c.disabled=false;c.controller=side
   if c.card.agent then c.owner=side end
 end
-enter=function(s,actor,c,opname,verb)
+local function enter(s,actor,c,opname,verb)
   local side=c.card.agent and other(actor) or actor
   prepare_unit(s,c,side)
   local row=B.choose(s,actor,'row',{1,2},{op=opname,enemy=side~=actor or nil}) or 2
@@ -778,26 +778,7 @@ function B.resolve(s,actor,source,operations,context)
           B.resolve(s,actor,source,A.get(card.card,'play'),{}) end
       elseif name=='extras' then play_extra(s,actor,op.n)
       elseif name=='showdown' then
-        local pl,foe=s.players[actor],s.players[other(actor)]
-        local arrived={}
-        for _,id in ipairs(op.characters) do
-          local piles={pl.deck,pl.hand}
-          if C.by_id[id].repel then
-            piles={pl.deck,pl.hand,pl.discard,foe.discard,foe.hand,foe.deck}
-          end
-          local unit,origin=take_named(piles,id)
-          if unit and (origin==pl.discard or origin==foe.discard) then
-            measure(s,source,'recovered')
-          end
-          if unit then
-            prepare_unit(s,unit,actor)
-            table.insert(pl.rows[1],unit)
-            arrived[#arrived+1]=unit.card.name
-          end
-        end
-        measure(s,source,'named_summons',#arrived)
-        if #arrived>0 then measure(s,source,'summon_plays');emit(s,'Building Showdown summons '..table.concat(arrived,', ')..' into Front.')
-        else emit(s,'Building Showdown finds no available characters.') end
+        showdown(s,actor,source,op.characters,context.earned)
       elseif name=='summon' then
         if source.card.id==op.caller and B.position(s,source)==actor and has_unit(s,actor,op.partner) then
           local pl=s.players[actor]
@@ -1140,6 +1121,44 @@ local function deployment_attack(s,p,attacker)
   local result=target.hp and target.hp..'/'..target.card.health..' HP' or 'defeated'
   s.last_attack=location(attacker)..' attacked '..location(target)..' ('..result..').'
 end
+local function strike_and_deploy(s,actor,unit,row)
+  deployment_attack(s,actor,unit)
+  B.resolve(s,actor,unit,A.get(unit.card,'deploy'),{entry_row=row})
+end
+
+showdown=function(s,actor,source,characters,earned)
+  local pl,foe=s.players[actor],s.players[other(actor)]
+  local arrived,placements={},{}
+  -- Finish moving all physical copies before any attack or player choice.
+  for _,id in ipairs(characters) do
+    local piles={pl.deck,pl.hand}
+    if C.by_id[id].repel then
+      piles={pl.deck,pl.hand,pl.discard,foe.discard,foe.hand,foe.deck}
+    end
+    local unit,origin=take_named(piles,id)
+    if unit then
+      if origin==pl.discard or origin==foe.discard then measure(s,source,'recovered') end
+      local row=B.placement_row(unit.card)
+      prepare_unit(s,unit,actor)
+      table.insert(pl.rows[row],unit)
+      arrived[#arrived+1]=unit
+      placements[#placements+1]=location(unit)..' ('..(row==1 and 'Front' or 'Back')..')'
+    end
+  end
+  if #arrived==0 then emit(s,source.card.name..' finds no available characters.');return end
+  emit(s,source.card.name..' summons '..table.concat(placements,', ')..'.')
+  measure(s,source,'named_summons',#arrived);measure(s,source,'summon_plays')
+  for _,unit in ipairs(arrived) do
+    if B.position(s,unit)==actor then
+      strike_and_deploy(s,actor,unit,B.placement_row(unit.card))
+      -- A defeat can close a gap and earn a chain before the next strike.
+      if earned then
+        for seat=1,2 do collect_triggers(s,seat,earned[seat]) end
+      end
+    end
+  end
+end
+
 function B.play(s,p,index,row,pos)
   local ok,why=B.playable(s,p,index);if not ok then return false,why end
   local hand=s.players[p].hand;local card=hand[index]
@@ -1176,11 +1195,10 @@ function B.play(s,p,index,row,pos)
         side~=p and s.players[side].name..' ' or '',row==1 and 'Front' or 'Back',pos))
     end
     collect_triggers(s,side,earned[side])
-    deployment_attack(s,p,card)
-    B.resolve(s,p,card,A.get(card.card,'deploy'),{entry_row=row})
+    strike_and_deploy(s,p,card,row)
   else
     emit(s,s.players[p].name..' plays '..card.card.name..' (Effect).')
-    B.resolve(s,p,card,A.get(card.card,'play'),{})
+    B.resolve(s,p,card,A.get(card.card,'play'),{earned=earned})
     discard_card(s,card)
   end
   B.check_chains(s,earned)

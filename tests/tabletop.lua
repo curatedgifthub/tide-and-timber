@@ -345,7 +345,7 @@ test("Showdown retrieves available characters together and Repel only recovers G
     local pl=s.players[1];local hero=unit(s,1,'Super:15')
     local heroine,gunner=unit(s,1,'Super:27'),unit(s,1,'Super:32')
     pl.hand={unit(s,1,'Super:57')};pl.deck={};pl.discard={}
-    unit(s,2,'Super:15',1)
+    local target=unit(s,2,'Fantasy:48',1)
     if scenario=='all' then pl.deck={hero};pl.hand[2]=heroine;pl.discard={gunner}
     elseif scenario=='partial' then pl.discard={heroine,gunner}
     elseif scenario=='prefer hand' then pl.hand[2]=gunner;pl.discard={unit(s,1,'Super:32')}
@@ -354,15 +354,96 @@ test("Showdown retrieves available characters together and Repel only recovers G
     assert(B.play(s,1,1))
     assert(s.stats.played[1]==plays+1 and #Chains.find(pl)==0)
     assert(pl.discard[#pl.discard].card.id=='Super:57')
-    local row=pl.rows[1]
-    if scenario=='all' then assert(#row==3 and row[1]==hero and row[2]==heroine and row[3]==gunner)
-    elseif scenario=='empty' then assert(#row==0 and #pl.discard==3)
-    else assert(#row==1 and row[1]==gunner and #pl.discard==2) end
+    local front,back=pl.rows[1],pl.rows[2]
+    if scenario=='all' then
+      assert(#front==2 and front[1]==hero and front[2]==heroine and #back==1 and back[1]==gunner)
+      assert(target.hp==target.card.health-6,'Heroine skips Front, but Gunner still attacks')
+    elseif scenario=='empty' then
+      assert(#front==0 and #back==0 and #pl.discard==3 and target.hp==target.card.health)
+    else
+      assert(#front==0 and #back==1 and back[1]==gunner and #pl.discard==2)
+      assert(target.hp==target.card.health-3)
+    end
     if B.position(s,gunner) then
       B.damage(s,2,gunner,99)
       assert(not B.position(s,gunner) and pl.discard[#pl.discard]==gunner)
     end
   end
+end)
+test("Showdown deploys together and prompts for each attack using the current battlefield",function()
+  local View=require('online.view');local json=require('online.json')
+  local metrics=assert(loadfile('web/metrics.lua'))()
+  for _,gunnerTarget in ipairs({'Front','Back'}) do
+    local m=M.new(cfg(),121);m.controllers={'Human','Human'}
+    local s=m.state;s.active=1
+    local pl=s.players[1]
+    local effect=unit(s,1,'Super:57')
+    local hero,heroine,gunner=unit(s,1,'Super:15'),unit(s,1,'Super:27'),unit(s,2,'Super:32')
+    pl.hand={effect,heroine};pl.deck={hero};s.players[2].discard={gunner}
+    local fragile=unit(s,2,'Fantasy:1',1);fragile.hp=1
+    local front=unit(s,2,'Fantasy:48',1)
+    local weakBack=unit(s,2,'Fantasy:21',2)
+    local back=unit(s,2,'Fantasy:48',2)
+    local start=s.turns
+    local function prompt(attacker,...)
+      local q=m.prompt;local expected={...}
+      assert(q and q.actor==1 and q.context.op=='deploy_attack' and q.context.unit==attacker)
+      assert(s.active==1 and s.turns==start and s.plays_left==0 and not U.contains(pl.discard,effect))
+      assert(#q.options==#expected)
+      local view=View.build(s,1,{seq=1,mode='duel',controllers=m.controllers,prompt=q})
+      local preview=json.decode(metrics(json.encode(view))).attackPreview
+      assert(view.last.c==effect.card.id and view.prompt.context.unit.u==attacker.uid)
+      assert(U.count(preview)==#expected)
+      for i,u in ipairs(expected) do
+        assert(q.options[i]==u and preview[tostring(u.uid)]==attacker.card.strength)
+      end
+    end
+    assert(m:act({type='play',index=1}))
+    assert(pl.rows[1][1]==hero and pl.rows[1][2]==heroine and pl.rows[2][1]==gunner)
+    assert(not U.contains(s.players[2].discard,gunner) and gunner.owner==2)
+    prompt(hero,fragile,front,weakBack,back)
+    assert(m:choose(1) and not fragile.hp)
+    prompt(heroine,weakBack,back)
+    assert(m:choose(1) and not weakBack.hp)
+    prompt(gunner,front,back)
+    local target=gunnerTarget=='Front' and front or back
+    assert(m:choose(gunnerTarget=='Front' and 1 or 2))
+    assert(target.hp==target.card.health-3 and front.hp+back.hp==front.card.health+back.card.health-3)
+    assert(s.active==2 and s.turns==start+1 and not m.prompt and pl.discard[1]==effect)
+    assert(s.stats.played[1]==1 and s.stats.played[2]==0)
+    local attacks={}
+    for _,line in ipairs(s.log) do
+      local name=line:match('^(.-) attacks ')
+      if name then attacks[name]=(attacks[name] or 0)+1 end
+    end
+    for _,u in ipairs({hero,heroine,gunner}) do assert(attacks[u.card.name]==1) end
+  end
+end)
+test("A chain earned between Showdown attacks resolves before the turn changes",function()
+  local s=M.new(cfg(),55).state;s.active=1
+  local effect=unit(s,1,'Super:57');s.players[1].hand={effect}
+  s.players[1].deck={unit(s,1,'Super:15'),unit(s,1,'Super:27'),unit(s,1,'Super:32')}
+  local minnow=unit(s,2,'Water:2',1)
+  local blocker=unit(s,2,'Super:15',1);blocker.hp=1
+  unit(s,2,'Water:5',1);unit(s,2,'Water:8',1)
+  local back=unit(s,2,'Super:27',2)
+  s.chooser=function(_,_,_,options,ctx)
+    if ctx.op=='deploy_attack' then
+      local target=ctx.unit.card.id=='Super:15' and blocker or ctx.unit.card.id=='Super:27' and back or minnow
+      for i,u in ipairs(options) do if u==target then return i end end
+      error('Required target was missing')
+    end
+    return 1
+  end
+  local drew=false
+  s.on_draw=function(event)
+    if event.source=='Minnow' then
+      assert(s.active==1 and U.contains(s.players[1].discard,effect))
+      assert(not blocker.hp and not minnow.hp and back.hp==back.card.health-3)
+      drew=true
+    end
+  end
+  assert(B.play(s,1,1) and drew and s.active==2 and s.stats.chain_activated[2]==1)
 end)
 test("Placement previews use unmodified ranks and only link the right ends",function()
   local preview=require('tabletop.placement').preview
@@ -672,15 +753,23 @@ test("Every Showdown retrieves one physical Gunner, including a repeat on a stol
       end
       return n
     end
+    local defender=unit(s,2,'Fantasy:48',1)
     play(first)
-    assert(pl.rows[1][1]==gunner and not U.contains(pile,gunner) and occurrences()==1)
+    assert(defender.hp==defender.card.health-3)
+    assert(pl.rows[2][1]==gunner and not U.contains(pile,gunner) and occurrences()==1)
     assert(gunner.owner==owner and gunner.controller==1 and U.contains(foe.hand,other))
     B.damage(s,2,gunner,99)
     assert(U.contains(s.players[owner].discard,gunner))
     play(spy);assert(U.contains(pl.hand,stolen) and not U.contains(pl.hand,gunner))
-    play(stolen);assert(pl.rows[1][1]==gunner and occurrences()==1 and stolen.owner==2 and s.round==1)
+    local before=defender.hp
+    s.chooser=function(_,_,_,options,ctx)
+      if ctx.op=='deploy_attack' then for i,u in ipairs(options) do if u==defender then return i end end end
+      return 1
+    end
+    play(stolen);assert(defender.hp==before-3)
+    assert(pl.rows[2][1]==gunner and occurrences()==1 and stolen.owner==2 and s.round==1)
     B.resolve(s,1,first,A.get(first.card,'play'))
-    assert(#pl.rows[1]==1 and occurrences()==1)
+    assert(#pl.rows[2]==1 and occurrences()==1 and defender.hp==before-3)
     assert(B.pass(s,s.active))
     if s.round==1 then assert(B.pass(s,s.active)) end
     assert(s.round==2)

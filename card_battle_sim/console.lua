@@ -41,7 +41,7 @@ local function read_name(prompt)
   end
 end
 local function stats(card)
-  return card.strength and (card.strength.." STR   "..card.health.."/"..card.health.." HP") or "Effect"
+  return card.strength and (card.strength.." ATK   "..card.health.."/"..card.health.." HP") or "Effect"
 end
 local function catalogue(f,filter)
   print("\n"..f.." catalog")
@@ -211,7 +211,7 @@ local function setup_menu(config,profile)
 end
 local function view_board(s)
   print(string.rep('=',78))
-  print(string.format('ROUND %d/3 | wins: Player %d, Opponent %d | score: %d-%d | turn: %s',
+  print(string.format('ROUND %d/3 | wins: Player %d, Opponent %d | remaining HP: %d-%d | turn: %s',
     s.round,s.players[1].wins,s.players[2].wins,Battle.score(s,1),Battle.score(s,2),s.players[s.active].name))
   local function show_row(p,r)
     local row=s.players[p].rows[r]
@@ -219,7 +219,7 @@ local function view_board(s)
     print(label..':')
     if #row==0 then print('  (empty)') end
     for pos,u in ipairs(row) do
-      print(string.format('  [%d] %-23s STR %-2d HP %d/%d',
+      print(string.format('  [%d] %-23s ATK %-2d HP %d/%d',
         pos,u.card.display_name or u.card.name,Battle.strength(s,u),u.hp,u.card.health))
     end
   end
@@ -246,7 +246,7 @@ local function human_chooser(s,actor,kind,options,context)
     local label
     if kind=='unit' then
       local p,r,pos=Battle.position(s,item)
-      label=string.format('%s | %s %s[%d] | STR %d HP %d/%d',
+      label=string.format('%s | %s %s[%d] | ATK %d HP %d/%d',
         item.card.display_name or item.card.name,p==1 and 'Player' or 'Opponent',r==1 and 'Front' or 'Back',pos,
         Battle.strength(s,item),item.hp,item.card.health)
     elseif kind=='card' or kind=='bottom_order' then label=item.card.display_name or item.card.name

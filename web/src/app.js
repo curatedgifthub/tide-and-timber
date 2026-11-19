@@ -236,8 +236,7 @@ async function dispatch(action,value) {
     const available=match.ready && !v.prompt
     const pick=available && legal.ok
     const text=c.replaces?'Play onto '+name(cards()[c.replaces]):c.type==='Effect'?'Play effect':'Choose placement'
-    const entry=c.health && legal.deployHp<c.health ? '<p class="hint">Deploys at 2 Strength and '+legal.deployHp+'/'+c.health+' HP. Field an ally with base Strength 1–3 for full Strength and Health.</p>' : ''
-    return modal(null, inspect(c,u,metrics)+entry+(pick?btn(text,'select',u.u,'primary'):available?'<p class="warn">'+esc(legal.reason)+'</p>':''))
+    return modal(null, inspect(c,u,metrics)+(pick?btn(text,'select',u.u,'primary'):available?'<p class="warn">'+esc(legal.reason)+'</p>':''))
   }
   if (action==='select') {
     const u=myHand.find(u=>String(u.u)===value)
@@ -256,8 +255,8 @@ async function dispatch(action,value) {
     return match.act({type:'play',index:handIndex()+1,row,pos})
   }
   if (action==='play' && handIndex()>=0) return play()
-  if (action==='pass') return modal('Concede this round?', '<p>Your opponent wins this round immediately.</p>'+btn('Keep playing','dismiss')+btn('Concede round','concede','','quiet'))
-  if (action==='concede' && modalView===v && match.ready) {dialog.close();return match.act({type:'pass'})}
+  if (action==='pass') return modal('Pass for this round?', '<p>Your opponent can keep playing. Remaining Health decides the round.</p>'+btn('Keep playing','dismiss')+btn('Pass round','confirm-pass','','quiet'))
+  if (action==='confirm-pass' && modalView===v && match.ready) {dialog.close();return match.act({type:'pass'})}
   if (['end','school'].includes(action)) return match.act({type:action})
   if (action==='choice' && v.prompt?.kind) return showChoice()
   if (action==='answer' && v.prompt?.kind && modalView===v && match.ready) {
@@ -269,9 +268,8 @@ async function dispatch(action,value) {
       '<div class="pile-grid">'+pile.map(u=>cardFace(cards()[u.c],'unit',u.u)).join('')+'</div>':'<p>The pile is empty.</p>')
   }
   if (action==='history') return modal('Event history','<ol class="history">'+match.log.map(l=>'<li>'+esc(eventText(l))+'</li>').join('')+'</ol>')
-  if (action==='scores') return modal('Round results',`<p>Surviving units at round end. You are ${esc(v.players[v.seat-1].name)}.</p>`+
+  if (action==='scores') return modal('Round results',`<p>Total remaining Health at round end. You are ${esc(v.players[v.seat-1].name)}.</p>`+
     (v.history.length ? v.history.map(r=>`<div class="score-entry"><b>Round ${r.round}</b><span>${esc(v.players[0].name)} · ${r.scores[0]} / ${esc(v.players[1].name)} · ${r.scores[1]}</span>
-    ${r.damage ? '<small>Enemy Health removed · '+r.damage[0]+' / '+r.damage[1]+'</small>' : ''}
     <strong>${r.winner ? esc(v.players[r.winner-1].name)+' won by '+esc(r.reason) : 'Draw'}</strong></div>`).join('') : '<p>No completed rounds yet.</p>'))
 }
 

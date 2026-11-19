@@ -82,40 +82,15 @@ local function evaluate(s,p,index,row,pos)
       end
     elseif #B.units(s,p)==0 and #B.units(s,3-p)==0 then val=val-5 end
   end
-  if s.combat and card.type=='Unit' and not card.agent then
-    local health=B.deployment_health(s,p,card)
-    val=val-(card.health-health)*0.65
-    if card.strength<=3 and #B.units(s,p)==0 then
-      for _,ally in ipairs(mine.hand) do
-        if ally.card.strength and ally.card.strength>=5 then val=val+2.5;break end
-      end
-    end
-    if row==1 and card.health>=5 and #mine.rows[1]==0 then val=val+1.8 end
-    if row==2 then
-      if mine.rows[1][pos] and card.health<=4 then val=val+1.8 end
-      if #theirs.rows[1]+#theirs.rows[2]>0 then val=val-math.floor(n/2) end
-    end
-  end
+  if card.type=='Unit' then val=val+(card.agent and -card.health or card.health)*0.65 end
   if s.round==1 then val=val-(foe-me>8 and 1.0 or 0) end
   return val
 end
 function AI.decision(s,p,difficulty)
   if B.can_school(s,p) then return {type='school'} end
   local legal=B.legal_indices(s,p)
-  if not s.combat and #legal==0 then return {type='pass'} end
-  local me=B.score(s,p);local opponent=B.score(s,3-p)
-  local theirs=s.players[3-p];local mine=s.players[p]
-  if not s.combat then
-    if theirs.passed and (me>opponent or me==opponent and #mine.hand<=2) then return {type='pass'} end
-    -- Budget the opening hand across the remaining rounds. Hand counts are public.
-    local can_concede=s.round<3 and theirs.wins==0
-    if can_concede and not theirs.passed and #mine.hand<=5 and
-        (me>=opponent+3 or (me<opponent and #mine.hand<=#theirs.hand)) then
-      return {type='pass'}
-    end
-    if #mine.hand<=2 and me>opponent+5 and s.round<3 then return {type='pass'} end
-    if s.round==1 and not theirs.passed and me+8<opponent and #mine.hand<=4 then return {type='pass'} end
-  end
+  local mine=s.players[p]
+  if s.players[3-p].passed and B.score(s,p)>B.score(s,3-p) then return {type='pass'} end
   local moves={}
   for _,index in ipairs(legal) do
     local card=mine.hand[index].card
@@ -133,12 +108,10 @@ function AI.decision(s,p,difficulty)
   for _,move in ipairs(moves) do
     if move.value>best.value then best=move end
   end
-  if difficulty=='easy' and (not s.combat or s.rng:random(3)~=1) then
+  if difficulty=='easy' and s.rng:random(3)~=1 then
     local random=moves[s.rng:random(#moves)]
     best=random
   end
-  -- Pass when the likely value of playing a card would not justify spending it.
-  if not s.combat and theirs.passed and me==opponent and #mine.hand>1 and s.round<3 and best.value<3 then return {type='pass'} end
   return best
 end
 function AI.step(s,p,difficulty)

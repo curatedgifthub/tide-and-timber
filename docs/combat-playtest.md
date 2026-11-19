@@ -1,6 +1,6 @@
 # Play-driven combat
 
-This report records the simulations from release `543f826`. The current rules include positional cover, reduced Back attack power, revised Spy and Showdown interactions, and unique starters. [Current rules](../README.md#on-the-battlefield)
+This report records the simulations from release `543f826`. Its mechanics and balance measurements describe that historical release. [Current rules](../README.md#on-the-battlefield)
 
 ## One card play
 

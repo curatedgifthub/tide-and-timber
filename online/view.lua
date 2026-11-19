@@ -3,7 +3,7 @@
 -- Private to a seat: the cards in its own hand, the cards an ability lets it examine, and
 -- the names of the cards it draws. Nobody receives draw-deck contents or order, or the seed.
 local View={}
-local function card(u) return {u=u.uid,c=u.card.id,o=u.owner,recovered=u.recovered or nil} end
+local function card(u) return {u=u.uid,c=u.card.id,o=u.owner} end
 local function unit(u)
   local t=card(u)
   t.hp=u.hp
@@ -43,14 +43,14 @@ end
 -- extra: seq, mode, controllers, prompt (engine prompt or nil), draws (engine draw events).
 function View.build(s,seat,extra)
   local v={seat=seat,seq=extra.seq,mode=extra.mode,controllers=extra.controllers,
-    combat=s.combat or nil,round=s.round,active=s.active,finished=s.finished or nil,winner=s.winner,
+    round=s.round,active=s.active,finished=s.finished or nil,winner=s.winner,
     plays=s.plays_left,extra=s.extra_turn or nil,school={s.school_used[1] or false,s.school_used[2] or false},
     players={},history={},lastAttack=s.last_attack,last=s.last_played and card(s.last_played) or nil,
     prompt=View.prompt(extra.prompt,seat)}
   for p=1,2 do
     local pl=s.players[p]
     local t={name=pl.name,faction=pl.faction,wins=pl.wins,passed=pl.passed or nil,
-      defeats=pl.defeats,damage=pl.damage,deck=#pl.deck,hand=#pl.hand,discard={},rows={{},{}}}
+      deck=#pl.deck,hand=#pl.hand,discard={},rows={{},{}}}
     if p==seat then
       t.cards={}
       for i,c in ipairs(pl.hand) do t.cards[i]=card(c) end
@@ -59,7 +59,7 @@ function View.build(s,seat,extra)
     for r=1,2 do for i,u in ipairs(pl.rows[r]) do t.rows[r][i]=unit(u) end end
     v.players[p]=t
   end
-  for i,r in ipairs(s.round_history) do v.history[i]={round=r.round,scores={r.scores[1],r.scores[2]},winner=r.winner,reason=r.reason,damage=r.damage} end
+  for i,r in ipairs(s.round_history) do v.history[i]={round=r.round,scores={r.scores[1],r.scores[2]},winner=r.winner,reason=r.reason} end
   if extra.draws and #extra.draws>0 then
     v.draws={}
     for i,e in ipairs(extra.draws) do

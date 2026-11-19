@@ -242,8 +242,8 @@ function App:rounds()
     entries[#entries+1]=item("Round "..r.round.."   ·   "..r.scores[me].." to "..r.scores[3-me],nil,
       r.winner==0 and "Tied round" or self:who(r.winner).." won"..(r.reason and " by "..r.reason or ""))
   end
-  if not s.finished then entries[#entries+1]=item("Round "..s.round.."   ·   "..B.score(s,me).." to "..B.score(s,3-me),nil,"In progress · both forces can keep playing until exhaustion or concession") end
-  self:list("Surviving units","You to "..self:who(3-me):lower().."   ·   "..s.players[me].wins.." to "..s.players[3-me].wins.." round wins",entries)
+  if not s.finished then entries[#entries+1]=item("Round "..s.round.."   ·   "..B.score(s,me).." to "..B.score(s,3-me),nil,"In progress · total current Health") end
+  self:list("Remaining Health","You to "..self:who(3-me):lower().."   ·   "..s.players[me].wins.." to "..s.players[3-me].wins.." round wins",entries)
 end
 function App:result()
   local m=self.match;local s=m.state;local me=m.seat
@@ -276,7 +276,7 @@ function App:pile(p,zone)
     local entry=item(u.card.name..(fresh and "   ·   NEW DRAW" or ""),function()
       self:list(u.card.name,u.card.text,{item("Back to "..zone,function() self:pile(p,zone) end,
         Text.stats(u.card),u.card)})
-    end,Text.stats(u.card)..(u.recovered and (u.card.repel and " · Repel available" or " · Recovery used this round") or ""),u.card)
+    end,Text.stats(u.card),u.card)
     if fresh then table.insert(entries,1,entry) else entries[#entries+1]=entry end
   end end
   self:list(self:who(p).."   /   "..(zone=="hand" and "Hand" or "Discard pile"),

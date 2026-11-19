@@ -2,14 +2,12 @@ local Chains=require('chains')
 local Placement={}
 
 Placement.guide={
-  {title="Place, strike, resolve",detail="Playing a unit from hand places it and attacks an enemy in the same play. Its Deploy ability resolves next, then any eligible chain abilities. Summons resolve their own abilities. Double Agents infiltrate instead of striking."},
-  {title="Front guards the same position",detail="Front 1 guards Back 1, Front 2 guards Back 2, and so on. Any Front unit and any uncovered Back unit can be attacked. Positions update when cards move or leave. A surviving defender counters for half its current Strength, rounded down. Special attacks use their own targets."},
-  {title="Support from Back",detail="Back deployment attacks use half current Strength, rounded up. Front uses full Strength. Then the rightmost other Back ally adds 1 attack damage per 3 current Strength, up to 2. Each member of a numerical chain also gains +1 deployment attack damage, counted once."},
-  {title="Deploy heavy units with support",detail="Units of base Strength 5 or more enter at 2 Strength and 2 HP without a friendly base Strength 1–3 unit. Summons and replacements enter at full Strength and Health before their abilities."},
-  {title="Reinforcements and recovery",detail="Draw one on subsequent turns. If you cannot play, wait for a draw or for the board to change. Ordinary discard recovery works once per copy per round. Alien Gunner’s Repel works on every Building Showdown."},
-  {title="Win a round",detail="Defeat an opponent who has no fielded units, no draw deck and no legal play. If neither can play or draw, more surviving units wins, with equal forces drawing. Conceding awards the round immediately. Each new round redeals the selected decks."},
+  {title="Play a unit",detail="Place it at its printed Attack Power (ATK, called Strength on cards) and full Health. Choose an eligible enemy for its ordinary attack. Resolve the card’s Deploy text and earned chain abilities in the same play. A summon uses its printed entry effects."},
+  {title="Choose your target",detail="Attack with current Attack Power in either row. Front guards the Back unit at the same position. Printed abilities use their own targets. Guard or other printed defenses can prevent damage. At zero Health a unit is defeated."},
+  {title="Draw and pass",detail="Start with five cards. Draw one on later turns while your deck has cards. Pass to stop playing for this round. An empty field can still receive reinforcements."},
+  {title="Score remaining Health",detail="When both sides pass or cannot continue, add the current Health of your surviving units in both rows. A field with no units, legal plays or draws can also end the round. Higher Health wins. Equal Health draws. Win two rounds to win the match. After three rounds without two wins, the match is drawn."},
   {title="Put a Bridge at either right end",detail="Follow your Front row to the right, cross to the last Back card, then read Back to the left."},
-  {title="Connect at least three units by base Strength",detail="Step up by one each time, or down by one. Matching Chain abilities can then trigger."},
+  {title="Connect at least three units by base Strength",detail="Step up by one each time, or down by one. A printed Chain ability triggers the first time its unit qualifies each deployment."},
   {title="Try Minnow (1) then Seahorse (2) in Front",detail="Place a unit with base Strength 3 at the right end of Back. Seahorse bridges 1 → 2 → 3 and Minnow draws."},
 }
 function Placement.cover(player,row,pos)
@@ -19,7 +17,7 @@ end
 function Placement.bonus(card,row)
   if row~=2 then return end
   if card.id=='Fantasy:4' then return 'Draw 1' end
-  if card.id=='Water:30' then return '+1 STR' end
+  if card.id=='Water:30' then return '+1 ATK' end
 end
 -- Inspect the board immediately after insertion, before any Deploy abilities resolve.
 function Placement.preview(player,row,pos,card)

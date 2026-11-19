@@ -30,8 +30,7 @@ return function(receiver, payload)
   end
   local prompt=view.prompt
   if prompt and prompt.context and prompt.context.op=='deploy_attack' then
-    local source
-    for _,u in ipairs(Battle.units(state,seat)) do if u.uid==prompt.context.unit.u then source=u end end
+    local source=state.last_played
     if source then
       for _,target in ipairs(Battle.attack_targets(state,seat)) do
         info.attackPreview[tostring(target.uid)]=Battle.attack_power(state,source,target)
@@ -41,7 +40,7 @@ return function(receiver, payload)
   for i, unit in ipairs(state.players[seat].hand) do
     local ok, reason = Battle.playable(state,seat,i)
     local side=Battle.deploy_side(seat,unit.card)
-    info.hand[i] = {ok=ok, reason=reason, side=side,deployHp=Battle.deployment_health(state,side,unit.card)}
+    info.hand[i] = {ok=ok, reason=reason, side=side}
     if ok and unit.uid==view.previewUid and unit.card.type=='Unit' and not unit.card.replaces then
       info.slots={{},{}}
       for r,row in ipairs(state.players[side].rows) do

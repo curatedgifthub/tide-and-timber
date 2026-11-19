@@ -29,7 +29,7 @@ local function observe(id,event,n)
   totals[id][event]=(totals[id][event] or 0)+n
 end
 local function matchup(f,g,styles,levels)
-  local wins={0,0};local draws,firstWins,attacks,rounds,survivors=0,0,0,0,0
+  local wins={0,0};local draws,firstWins,attacks,rounds,remainingHP=0,0,0,0,0
   for seed=first,first+samples-1 do
     local a,b=deck(f,styles[1],seed*271),deck(g,styles[2],seed*419)
     for swap=0,1 do
@@ -45,7 +45,7 @@ local function matchup(f,g,styles,levels)
         elseif move.type=="school" then assert(B.school(s,p))
         else assert(B.pass(s,p)) end
       end
-      for _,r in ipairs(s.round_history) do rounds=rounds+1;survivors=survivors+r.scores[1]+r.scores[2] end
+      for _,r in ipairs(s.round_history) do rounds=rounds+1;remainingHP=remainingHP+r.scores[1]+r.scores[2] end
       for seat,selected in ipairs(swap==0 and {a,b} or {b,a}) do
         local seen={}
         for _,id in ipairs(selected) do
@@ -64,8 +64,8 @@ local function matchup(f,g,styles,levels)
       end
     end
   end
-  print(string.format("%s/%s vs %s/%s (%s/%s): %d-%d, %d draws; opener %d/%d; attacks %.1f/match; survivors %.1f/round",
-    f,styles[1],g,styles[2],levels[1],levels[2],wins[1],wins[2],draws,firstWins,2*samples,attacks/(2*samples),survivors/rounds))
+  print(string.format("%s/%s vs %s/%s (%s/%s): %d-%d, %d draws; opener %d/%d; attacks %.1f/match; remaining HP %.1f/round",
+    f,styles[1],g,styles[2],levels[1],levels[2],wins[1],wins[2],draws,firstWins,2*samples,attacks/(2*samples),remainingHP/rounds))
 end
 for i,f in ipairs(L.factions) do
   for j=i+1,#L.factions do local g=L.factions[j]
@@ -83,10 +83,10 @@ end
 -- One row per playable design, including those with zero natural activations.
 if arg[4] then
   local help=require('tabletop.deck_help')
-  local columns={'dealt_copies','deck_matches','deck_wins','plays','attacks','attack_damage','counter_damage',
+  local columns={'dealt_copies','deck_matches','deck_wins','plays','attacks','attack_damage',
     'special_damage','friendly_damage','executions','prevented','healed','recovered','drawn','searched',
     'chain_triggers','resolutions','operations','conditions_met','empty_heals','empty_draws','empty_recoveries',
-    'modified_attacks','modified_counters','summon_plays','named_summons','replacements','named_bonus'}
+    'modified_attacks','summon_plays','named_summons','replacements','named_bonus'}
   local file=assert(io.open(arg[4],'w'))
   local function row(fields)
     local out={}

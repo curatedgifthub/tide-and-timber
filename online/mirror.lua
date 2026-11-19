@@ -15,7 +15,7 @@ function Mirror:instance(t,side)
   if not card then error('Unknown card '..tostring(t.c)..'. This copy of the game is out of date.') end
   if not u or u.card~=card then u={uid=t.u,card=card,activated={}};self.cache[t.u]=u end
   u.owner=t.o;u.controller=side or t.o
-  u.recovered=t.recovered;u.hp=t.hp;u.mod=t.mod or 0;u.guard=t.g or 0
+  u.hp=t.hp;u.mod=t.mod or 0;u.guard=t.g or 0
   u.negate_damage=t.nd or false;u.disabled=t.dis or false
   u.activated.chain=t.ch or nil
   return u
@@ -39,14 +39,12 @@ function Mirror:apply(v)
   local s=self.state or {players={{},{}},max_hand=math.huge,log=self.log}
   self.state,self.seat=s,v.seat
   s.last_attack=v.lastAttack
-  s.combat=v.combat
   s.round,s.active,s.finished,s.winner=v.round,v.active,v.finished or false,v.winner
   s.plays_left,s.extra_turn=v.plays,v.extra or false
   s.school_used={[1]=v.school[1],[2]=v.school[2]}
   for p=1,2 do
     local t,pl=v.players[p],s.players[p]
     pl.name,pl.faction,pl.wins,pl.passed=t.name,t.faction,t.wins,t.passed or false
-    pl.defeats,pl.damage=t.defeats or 0,t.damage or 0
     pl.deck=blanks(t.deck)
     pl.rows={{},{}}
     for r=1,2 do for i,u in ipairs(t.rows[r]) do pl.rows[r][i]=self:instance(u,p) end end
@@ -58,7 +56,7 @@ function Mirror:apply(v)
     else pl.hand=blanks(t.hand) end
   end
   s.round_history={}
-  for i,r in ipairs(v.history) do s.round_history[i]={round=r.round,scores=r.scores,winner=r.winner,reason=r.reason,damage=r.damage} end
+  for i,r in ipairs(v.history) do s.round_history[i]={round=r.round,scores=r.scores,winner=r.winner,reason=r.reason} end
   -- The last card played is usually on a battlefield or in a discard pile already.
   s.last_played=v.last and (self.cache[v.last.u] or self:instance(v.last)) or nil
   local q=v.prompt

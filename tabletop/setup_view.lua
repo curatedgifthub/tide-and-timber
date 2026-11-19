@@ -159,10 +159,6 @@ function View.builder(app)
   local hint=require("tabletop.deck_help").describe(c,cfg.decks[p])
   local ability=c.text..(hint and "\n"..hint or "")
   local top=425
-  if c.strength and c.strength>=5 and not c.replaces then
-    P.text("Heavy · Without a base Strength 1–3 ally, enter at 2 STR and 2/"..c.health.." HP.",x+18,422,15,P.gold,"sans",w-36)
-    top=469
-  end
   local size=17
   while size>12 do
     local _,lines=P.font(size):getWrap(ability,w-36)

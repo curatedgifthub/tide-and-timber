@@ -114,7 +114,7 @@ t('damage and zero-health destruction enter the owner discard',function()
   local enemy_score=Battle.score(s,2)
   Battle.resolve(s,1,src,Abilities.get(src.card,'deploy'),{})
   eq(victim.hp,nil);eq(#s.players[2].rows[1],0)
-  eq(Battle.score(s,2),enemy_score-victim.card.strength)
+  eq(Battle.score(s,2),enemy_score-victim.card.health)
   eq(s.players[2].discard[#s.players[2].discard],victim)
 end)
 t('direct Strength changes, area immunity, and printed Strength',function()
@@ -155,7 +155,7 @@ t('Goldfish combination consumes hand, reshuffles discard, draws and grants play
   check(#s.players[1].hand<=10)
   eq(s.plays_left,1)
 end)
-t('passing requires both players, preserves hand/draw deck, best of three ties',function()
+t('passing requires both players, redeals selected decks, best of three ties',function()
   local s=fresh()
   local original_hand=#s.players[1].hand
   local original_deck=#s.players[1].deck

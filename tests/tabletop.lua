@@ -155,14 +155,14 @@ test("Halfling Courier automatically draws the exact top copy in Back only",func
     integrity(m,c)
   end
 end)
-test("Printed-rank Bridge after insertion, once per deployment, chain attack bonus",function()
+test("Printed-rank Bridge after insertion, once per deployment, printed effect only",function()
   local s=M.new(cfg(),77).state;s.active=2
   unit(s,2,'Water:2',1);local bridge=unit(s,2,'Water:21')
   local rank3=unit(s,2,'Water:28',2);rank3.mod=3
   s.players[2].hand={bridge,unit(s,2,'Water:1')}
   assert(not B.play(s,2,1,1,4));assert(#s.players[2].hand==2)
   assert(B.play(s,2,1,1,2));assert(Chains.qualify(s.players[2],bridge,3,true))
-  assert(B.score(s,2)==3 and B.attack_power(s,bridge,rank3)==3+B.support(s,bridge) and s.stats.chain_activated[2]==1)
+  assert(B.score(s,2)==s.players[2].rows[1][1].hp+bridge.hp+rank3.hp and B.attack_power(s,bridge,rank3)==bridge.card.strength and s.stats.chain_activated[2]==1)
   B.check_chains(s);assert(s.stats.chain_activated[2]==1)
 end)
 test("Nested search choices allow explicit bottom order and find only deck cards",function()
@@ -298,7 +298,6 @@ test("New Water cards: Lighthouse, Deep-Sea Diver, The White Whale, Bleached Ree
   assert(not m.prompt and #pl.deck==3 and pl.deck[3]==top,"top card untouched")
   -- The White Whale: enters with 4 unpreventable damage; opposing damage it survives gives +2.
   m,s=fresh();pl=s.players[1]
-  unit(s,1,'Water:2',2) -- light support keeps the deployment at full Health before Old Harpoon
   local whale=unit(s,1,'Water:73');pl.hand={whale,unit(s,1,'Water:1')};whale.guard=5
   assert(B.play(s,1,1,1,1));assert(whale.hp==8 and B.strength(s,whale)==7,"self-damage does not trigger Relentless")
   B.damage(s,2,whale,3);assert(whale.hp==5 and B.strength(s,whale)==9)
@@ -326,7 +325,7 @@ test("A turn draws one card, extra plays share the turn, and exhausted decks sta
   me.hand[1]=extra;me.hand[2]=unit(s,p,'Water:1')
   assert(B.play(s,p,1));assert(s.extra_turn and #me.deck==15 and #foe.hand==5)
   assert(B.end_extra(s,p));assert(s.active==q and #foe.hand==6 and #foe.deck==14)
-  assert(B.pass(s,q) and s.round==2 and s.active==q)
+  assert(B.pass(s,q) and s.round==1 and B.pass(s,p) and s.round==2 and s.active==q)
   assert(#me.hand==5 and #foe.hand==5 and #foe.deck==15)
   foe.deck={};local count=#foe.hand
   assert(B.draw(s,q,1)==0 and #foe.hand==count)
@@ -423,7 +422,6 @@ test("Comic edition: Dinosaur trio, Warden and Phantom, Sidekick order, Monochro
   m,s=fresh();local foe;pl,foe=s.players[1],s.players[2]
   local rex=unit(s,1,'Super:73');pl.deck={unit(s,1,'Super:2'),rex,unit(s,1,'Super:3')}
   local e1,e2=unit(s,2,'Fantasy:1',2),unit(s,2,'Fantasy:5',2);local hp1,hp2=e1.hp,e2.hp
-  unit(s,1,'Super:3',2) -- light support for Dan
   for i=1,2 do unit(s,2,'Fantasy:48',1).guard=20 end -- cover both measured Back positions
   pl.hand={unit(s,1,'Super:71'),unit(s,1,'Super:72'),unit(s,1,'Super:12'),unit(s,1,'Super:12')}
   assert(B.play(s,1,1,1,1));assert(#pl.deck==3 and not B.position(s,rex),"one Dan alone summons nothing")
@@ -486,7 +484,7 @@ test("Comic edition: Dinosaur trio, Warden and Phantom, Sidekick order, Monochro
   B.damage(s,2,scared,99)
   pl.hand={brave,unit(s,1,'Super:12')}
   assert(B.play(s,1,1,1,1))
-  assert(victim.hp==vhp-2 and not brave.hp,"a dead Scared Sidekick does not trigger the pair")
+  assert(victim.hp==vhp-brave.card.strength and brave.hp==brave.card.health and brave.guard==3,"a dead Scared Sidekick does not trigger the pair")
   m,s=fresh();pl=s.players[1]
   brave,scared=unit(s,2,'Super:74',1),unit(s,1,'Super:75')
   pl.hand={scared,unit(s,1,'Super:12')};pl.deck={unit(s,1,'Super:2')}
@@ -497,10 +495,10 @@ test("Comic edition: Dinosaur trio, Warden and Phantom, Sidekick order, Monochro
   m,s=fresh();pl,foe=s.players[1],s.players[2]
   local spy=unit(s,1,'Super:78');pl.hand={spy,unit(s,1,'Super:12'),unit(s,1,'Super:12')}
   local loot=unit(s,2,'Fantasy:40');foe.discard={unit(s,2,'Fantasy:1'),loot};foe.hand={unit(s,2,'Fantasy:1'),unit(s,2,'Fantasy:39')}
-  unit(s,2,'Fantasy:5',1)
+  local sentry=unit(s,2,'Fantasy:5',1)
   assert(not B.play(s,1,1,1,3),"positions are counted on the opposing row");assert(B.play(s,1,1,1,2))
   local ss,sr,si=B.position(s,spy);assert(ss==2 and sr==1 and si==2 and spy.owner==2 and spy.controller==2)
-  assert(B.score(s,1)==0 and B.score(s,2)==2 and B.strength(s,spy)==spy.card.strength,"gifted Strength does not award a defeat")
+  assert(B.score(s,1)==0 and sentry.hp==sentry.card.health-spy.card.strength and B.score(s,2)==spy.hp+sentry.hp and B.strength(s,spy)==spy.card.strength,"the Spy attacks once and its remaining HP counts for its new controller")
   assert(pl.hand[#pl.hand]==loot and loot.owner==2 and loot.controller==1,"Vault Heist takes the chosen discard")
   B.damage(s,1,spy,9);assert(foe.discard[#foe.discard]==spy,"a Double Agent goes to its new owner's discard pile")
   -- Even a Fantasy deck can pull it back: Monochrome counts as every faction for discard abilities.
@@ -547,7 +545,7 @@ test("A card play chooses basic and printed targets before passing control",func
   assert(m.prompt.options[1]==guard and guard.hp==guard.card.health)
   assert(m:choose(1) and m.prompt.context.op=='damage' and #m.prompt.options==3)
   assert(s.turns==start and B.strength(s,scared)==5 and guard.hp==guard.card.health-1)
-  assert(brave.hp==brave.card.health-math.floor(B.strength(s,guard)/2))
+  assert(brave.hp==brave.card.health)
   assert(m:choose(3) and not m.prompt and back.hp==back.card.health-3 and s.active==2)
   assert(not m:act({type='attack',index=1,row=1,pos=1}))
 end)
@@ -565,21 +563,22 @@ test("Rune Apprentice and High Elf Spellblade earn chain strikes during deployme
     local pos=id=='Fantasy:16' and 3 or 4
     assert(m:act({type='play',index=1,row=1,pos=pos}))
     assert(m.prompt and m.prompt.context.op=='damage' and m.prompt.options[2]==back)
-    if id=='Fantasy:16' then assert(not source.hp,'a lethal counter cannot erase the earned chain') end
+    assert(source.hp==source.card.health)
     assert(m:choose(2) and back.hp==back.card.health-2 and s.active==2)
   end
 end)
-test("A wipe allows reinforcements and conceding redeals each selected deck",function()
+test("A wipe allows reinforcements and passing redeals each selected deck",function()
   local c=cfg();local s=M.new(c,99).state;s.active=1
   local foe=unit(s,2,'Fantasy:12',1)
   local big=unit(s,1,'Fantasy:48');s.players[1].hand={big}
   local light=unit(s,1,'Fantasy:1',2)
-  assert(B.deployment_health(s,1,big.card)==big.card.health)
   B.damage(s,2,light,99)
   assert(s.round==1 and B.playable(s,1,1))
   foe.hp=2
   assert(B.play(s,1,1,1,1) and not foe.hp and s.round==1 and s.active==2)
-  assert(B.pass(s,2) and s.round_history[1].winner==1 and s.round_history[1].reason=='concession')
+  assert(big.hp==big.card.health and B.strength(s,big)==big.card.strength)
+  assert(B.pass(s,2) and s.round==1 and B.pass(s,1))
+  assert(s.round_history[1].winner==1 and s.round_history[1].scores[1]==big.card.health)
   assert(#s.players[1].hand==5 and #s.players[2].hand==5 and B.score(s,1)==0 and s.round==2)
 end)
 test("Wounded heal targets, recovery fallback, and an exhausted seat waiting for a legal draw",function()
@@ -626,21 +625,21 @@ test("Spy's stolen Grave Acolyte chooses either personal pile across factions",f
       return {unit(s,1,'Super:15'),unit(s,1,'Water:1'),unit(s,1,'Fantasy:1'),unit(s,1,'Super:70'),unit(s,1,'Super:66')}
     end
     pl.deck=pile();pl.discard=pile()
-    local blocked=unit(s,1,'Super:32');blocked.recovered=true;pl.discard[#pl.discard+1]=blocked
+    pl.discard[#pl.discard+1]=unit(s,1,'Super:32')
     local target=pl[zone][2]
     m.controllers[1]='Human';s.active=1;s.plays_left=1
     assert(m:act({type='play',index=1,row=2,pos=1}))
     assert(m.prompt.kind=='zone' and m.prompt.actor==1)
     assert(m:choose(zone=='discard' and 1 or 2))
     assert(m.prompt.context.op==(zone=='discard' and 'grave_recover' or 'grave_search'))
-    assert(#m.prompt.options==3 and not View.prompt(m.prompt,2).options)
+    assert(#m.prompt.options==(zone=='discard' and 4 or 3) and not View.prompt(m.prompt,2).options)
     local pick
     for i,c in ipairs(m.prompt.options) do if c==target then pick=i end end
     assert(m:choose(assert(pick)) and pl.hand[#pl.hand]==target and s.active==2)
     assert(not U.contains(pl[zone],target) and target.controller==1 and target.owner==1)
     B.damage(s,2,acolyte,99)
     assert(U.contains(foe.discard,acolyte) and acolyte.owner==2)
-    assert(B.pass(s,2) and s.round==2)
+    assert(B.pass(s,2) and B.pass(s,1) and s.round==2)
     assert(U.contains(foe.deck,acolyte) or U.contains(foe.hand,acolyte))
     assert(spy.owner==1 and spy.controller==1)
   end
@@ -651,7 +650,7 @@ test("Every Showdown retrieves one physical Gunner, including a repeat on a stol
     local pl,foe=s.players[1],s.players[2]
     for _,p in ipairs(s.players) do p.deck={};p.hand={};p.discard={} end
     local owner=zone=='discard' and side or 2
-    local gunner=unit(s,owner,'Super:32');gunner.home=owner;gunner.recovered=true
+    local gunner=unit(s,owner,'Super:32');gunner.home=owner
     gunner.controller=side
     local pile=s.players[side][zone];pile[#pile+1]=gunner
     local other=unit(s,2,'Fantasy:48');foe.hand[#foe.hand+1]=other
@@ -676,17 +675,19 @@ test("Every Showdown retrieves one physical Gunner, including a repeat on a stol
     assert(pl.rows[1][1]==gunner and not U.contains(pile,gunner) and occurrences()==1)
     assert(gunner.owner==owner and gunner.controller==1 and U.contains(foe.hand,other))
     B.damage(s,2,gunner,99)
-    assert(U.contains(s.players[owner].discard,gunner) and gunner.recovered)
+    assert(U.contains(s.players[owner].discard,gunner))
     play(spy);assert(U.contains(pl.hand,stolen) and not U.contains(pl.hand,gunner))
     play(stolen);assert(pl.rows[1][1]==gunner and occurrences()==1 and stolen.owner==2 and s.round==1)
     B.resolve(s,1,first,A.get(first.card,'play'))
     assert(#pl.rows[1]==1 and occurrences()==1)
-    assert(B.pass(s,s.active) and s.round==2)
+    assert(B.pass(s,s.active))
+    if s.round==1 then assert(B.pass(s,s.active)) end
+    assert(s.round==2)
     local home=s.players[owner]
     assert(gunner.owner==owner and gunner.controller==owner and (U.contains(home.hand,gunner) or U.contains(home.deck,gunner)))
   end end
 end)
-test("Basic attacks use current column cover and halve only Back Strength before bonuses",function()
+test("Basic attacks use column cover and full Attack Power in both rows",function()
   local s=M.new(cfg(),43).state
   local f=unit(s,2,'Fantasy:48',1)
   local b1=unit(s,2,'Fantasy:48',2);local b2=unit(s,2,'Fantasy:48',2)
@@ -699,11 +700,73 @@ test("Basic attacks use current column cover and halve only Back Strength before
   local attacker=unit(s,1,'Super:73',1)
   assert(B.attack_power(s,attacker,b2)==6)
   table.remove(s.players[1].rows[1]);table.insert(s.players[1].rows[2],attacker)
-  assert(B.attack_power(s,attacker,b2)==3)
+  assert(B.attack_power(s,attacker,b2)==6)
   attacker.mod=-1;unit(s,1,'Super:61',2)
-  assert(B.attack_power(s,attacker,b2)==4,'ceil(5/2) then +1 support')
+  assert(B.attack_power(s,attacker,b2)==5,'only the explicit stat change affects damage')
   B.damage(s,1,b1,99);exposed(f)
   B.damage(s,1,f,99);exposed(b2)
+end)
+test("Remaining current Health alone decides rounds and two wins decide the match",function()
+  local function round(s,first,second)
+    -- Seat 1 controls two wounded high-power units, including one borrowed copy.
+    local a=unit(s,1,'Super:66',1);local b=unit(s,1,'Fantasy:48',2)
+    a.owner=2;a.hp=1;b.hp=first-1;a.mod=10
+    local c=unit(s,2,'Super:15',2);c.hp=second
+    assert(B.score(s,1)==first and B.score(s,2)==second)
+    local r=s.round
+    assert(B.pass(s,s.active) and s.round==r and not s.finished)
+    assert(B.pass(s,s.active))
+    local result=s.round_history[r]
+    assert(result.scores[1]==first and result.scores[2]==second)
+    assert(result.winner==(first==second and 0 or first>second and 1 or 2))
+  end
+  local s=M.new(cfg(),18).state
+  round(s,2,3);round(s,3,3);round(s,2,2)
+  assert(s.finished and s.players[2].wins==1 and s.winner==0)
+  s=M.new(cfg(),19).state
+  round(s,2,3);round(s,3,2);round(s,2,3)
+  assert(s.finished and s.winner==2 and s.players[2].wins==2)
+  s=M.new(cfg(),20).state
+  round(s,4,2);round(s,3,2)
+  assert(s.finished and s.winner==1 and #s.round_history==2)
+end)
+test("Exhaustion scores wounds and healing in both rows",function()
+  local s=M.new(cfg(),32).state;s.active=1
+  local a=unit(s,1,'Fantasy:48',1);a.hp=1
+  local b=unit(s,1,'Super:15',2);b.hp=1
+  local c=unit(s,2,'Super:27',1);c.hp=4
+  s.players[1].hand={unit(s,1,'Fantasy:33')};s.players[2].hand={}
+  s.players[1].deck={};s.players[2].deck={}
+  assert(B.play(s,1,1))
+  local result=s.round_history[1]
+  assert(result.scores[1]==5 and result.scores[2]==4 and result.winner==1)
+end)
+test("Printed reactions, extra plays, recovery, and once-per-round Shell use",function()
+  local s=M.new(cfg(),24).state;s.active=1
+  local urchin=unit(s,2,'Water:23',1)
+  local striker=unit(s,1,'Super:15')
+  s.players[1].hand={striker};s.players[2].hand={unit(s,2,'Water:1')}
+  assert(B.play(s,1,1,2,1) and striker.hp==striker.card.health-1)
+  assert((urchin.hp or 0)==math.max(0,urchin.card.health-striker.card.strength))
+  s.active=1;s.plays_left=1
+  s.players[1].hand={unit(s,1,'Super:70'),unit(s,1,'Super:70'),unit(s,1,'Super:15')}
+  assert(B.play(s,1,1) and B.play(s,1,1) and s.plays_left==3)
+  local crab=unit(s,1,'Water:17',1);local reunion=unit(s,1,'Water:58')
+  assert(not B.damage(s,2,crab,2) and crab.hp==crab.card.health)
+  for i=1,2 do
+    B.damage(s,2,crab,99)
+    B.resolve(s,1,reunion,A.get(reunion.card,'play'))
+    local pl=s.players[1]
+    assert(pl.hand[#pl.hand]==crab and B.play(s,1,#pl.hand,1,1))
+    assert(B.damage(s,2,crab,1) and crab.hp==crab.card.health-1)
+  end
+end)
+test("Only an explicitly required team blocks playing a team card",function()
+  local s=M.new(cfg(),14).state;s.active=1
+  s.players[1].hand={unit(s,1,'Super:58'),unit(s,1,'Fantasy:58')}
+  local n=#s.players[1].deck
+  assert(not B.playable(s,1,1) and B.play(s,1,2))
+  assert(#s.players[1].deck==n-2 and s.plays_left==2 and s.active==1)
 end)
 test("180 seeded full matches conserve selected copies across every action",function()
   local rng=U.rng(2026);local played={}

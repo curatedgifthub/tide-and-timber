@@ -29,7 +29,6 @@ local function row(app,p,r,y,chains)
   P.box(x,y,4,h,spec.color)
   P.label(app:who(p),x+14,y+10,spec.color)
   P.text(r==1 and "Front" or "Back",x+14,y+28,24,P.textColor,"serif")
-  P.text(r==1 and "Full strike" or "Support",x+15,y+59,13,P.muted,"bold")
   P.line(x+94,y+9,x+94,y+79,P.rule)
   local left=x+119;local available=w-145
   if placing and app.previewUnit~=unit then
@@ -104,7 +103,7 @@ local function scoreBar(app,p,x)
   P.one(Lib.label(pl.faction),x+38,94,133,22,P.textColor,"serif")
   local score=s.finished and #s.round_history>0 and s.round_history[#s.round_history].scores[p] or B.score(s,p)
   P.one(score,x+165,83,51,41,P.textColor,"serif","right")
-  P.text("units",x+223,107,12,P.muted,"bold")
+  P.text("HP",x+223,107,12,P.muted,"bold")
   for i=1,2 do P.diamond(x+270+(i-1)*16,104,5,i<=pl.wins and P.gold or P.rule,i<=pl.wins) end
   P.text("Draw "..#pl.deck,x+7,139,15,P.muted)
   P.button("pile-"..p,"Discard "..#pl.discard,x+78,134,99,26,function() app:pile(p,"discard") end)
@@ -130,7 +129,7 @@ local function inspector(app,u)
   P.one(c.display_name or c.name,x+15,y+140,w-30,23,P.textColor,"serif")
   local value=u.hp and B.strength(app.match.state,u) or c.strength
   local stats=Text.stats(c,value,u.hp)
-  if c.strength and value~=c.strength then stats=stats.."   (base "..c.strength.." STR)" end
+  if c.strength and value~=c.strength then stats=stats.."   (base "..c.strength.." ATK)" end
   P.one(stats,x+15,y+170,w-30,16,P.textColor,"bold")
   local ability=c.text
   local top=y+197;local size=16
@@ -143,10 +142,9 @@ local function inspector(app,u)
   local tags={}
   if u.activated and u.activated.chain then tags[#tags+1]="Chain used" end
   if (u.guard or 0)>0 then tags[#tags+1]="Guard "..u.guard end
-  if u.recovered then tags[#tags+1]="Recovery used" end
   if u.negate_damage then tags[#tags+1]="Barrier" end
   if u.disabled then tags[#tags+1]="Suppressed" end
-  if u.hp and u.mod~=0 then tags[#tags+1]=string.format("%+d STR",u.mod) end
+  if u.hp and u.mod~=0 then tags[#tags+1]=string.format("%+d ATK",u.mod) end
   if u.hp and u.owner~=u.controller then tags[#tags+1]="Traded" end
   if #tags>0 then P.one(table.concat(tags,"  ·  "),x+15,y+303,w-30,15,P.gold,"bold") end
 end
@@ -228,10 +226,9 @@ function V.draw(app)
     or chosen and (chosen.card.type=="Effect" and "Choose Play effect to resolve."
       or chosen.card.replaces and "Choose Play onto "..Lib.cards.by_id[chosen.card.replaces].name.." to resolve."
       or chosen.card.agent and "Choose a gold marker on the opposing battlefield."
-      or B.deployment_health(s,me,chosen.card)<chosen.card.health and ("Deploys at 2 STR and "..B.deployment_health(s,me,chosen.card).."/"..chosen.card.health.." HP without a light ally.")
       or chosen.card.bridge and "Place at a right end to link Front and Back."
       or Placement.bonus(chosen.card,2) and "Back row bonus · "..Placement.bonus(chosen.card,2)
-      or "Front strikes at full Strength. Back strikes at half, rounded up.")
+      or "Choose a position, then an enemy to attack.")
     or "Play a unit to place it and attack."
   local perPage=app.handPageSize
   local pages=math.max(1,math.ceil(#hand/perPage))
@@ -283,10 +280,10 @@ function V.draw(app)
       P.button("play-effect","Play onto "..Lib.cards.by_id[chosen.card.replaces].name.."   →",x,y+27,328,44,function() app:action({type="play",index=app.selected}) end,"gold")
     elseif s.extra_turn then P.button("end-extra","End extra plays",x,y+27,328,44,function() app:action({type="end"}) end)
     else P.button("manual-help",chosen and "Choose a row position" or "Select a hand card",x,y+27,328,44,nil,nil,false) end
-    P.button("pass","Concede round",x,y+80,328,44,function()
-      app:list("Concede this round?","Your opponent immediately wins this round.",{
+    P.button("pass","Pass round",x,y+80,328,44,function()
+      app:list("Pass for this round?","Your opponent can keep playing. Remaining Health decides the round.",{
         {title="Keep playing",action=function() app.modal=nil end},
-        {title="Concede round",action=function() app:action({type="pass"}) end}})
+        {title="Pass round",action=function() app:action({type="pass"}) end}})
     end,"accent")
   else
     P.button("manual-help",waiting(app) or "Answer the question",x,y+27,328,44,nil,nil,false)

@@ -1,5 +1,6 @@
 // Exercise the browser client directly against the Lua server used by the Mac client.
 import assert from 'node:assert/strict'
+import fengari from 'fengari-web'
 import {spawnSync} from 'node:child_process'
 import {mkdtempSync, readFileSync, rmSync} from 'node:fs'
 import {tmpdir} from 'node:os'
@@ -12,6 +13,7 @@ import {board,choices} from '../src/board.js'
 import {cardFace,inspect} from '../src/ui.js'
 
 const catalog = JSON.parse(readFileSync(new URL('../dist/catalog.json', import.meta.url)))
+const derive = fengari.load(readFileSync(new URL('../dist/public-rules.lua', import.meta.url), 'utf8'))()
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const dir = mkdtempSync(join(tmpdir(), 'tt-protocol-'))
 globalThis.location = new URL('https://example.github.io/tide-and-timber/')
@@ -83,19 +85,20 @@ try {
   // Render both real seat-view shapes in Node, with a wound on each battlefield.
   for (const seat of [host,guest]) {
     const view=structuredClone(seat.view)
-    const metrics={scores:[1,1],units:{},hand:[],attackPreview:{}}
     for (const [i,p] of view.players.entries()) {
       const c=catalog.factions[i].starter.map(id=>catalog.cards[id]).find(c=>c.health>3)
-      const u={u:100+i,c:c.id,hp:c.health-i-1}
+      const u={u:100+i,c:c.id,o:i+1,hp:c.health-i-1}
       p.rows[i]=[u]
-      metrics.units[u.u]={seat:i+1,row:i+1,pos:1,strength:c.strength}
     }
+    const metrics=JSON.parse(derive(JSON.stringify(view)))
+    assert.deepEqual(metrics.scores,view.players.map(p=>p.rows.flat()[0].hp))
     const html=board({view,ready:true,active:true,log:[]},catalog,metrics,null)
     const opts=view.players.map(p=>p.rows.flat()[0])
     view.prompt={kind:'unit',context:{op:'heal'},options:opts}
     const prompt=choices(view,catalog,metrics).body
     for (const u of opts) {
       const hp=u.hp+'/'+catalog.cards[u.c].health+' HP'
+      assert.ok(html.includes(u.hp+' remaining HP'))
       assert.ok(html.includes(hp) && prompt.includes(hp),'battlefield and choice show wounded HP')
     }
     assert.doesNotMatch(html,/Attack with a unit|ready unit/i)

@@ -17,7 +17,7 @@ return function(receiver, payload)
     info.scores[p] = Battle.score(state,p)
     for r, row in ipairs(player.rows) do
       for pos, unit in ipairs(row) do
-        info.units[tostring(unit.uid)] = {strength=Battle.strength(state,unit),seat=p,row=r,pos=pos,cover=Placement.cover(player,r,pos)}
+        info.units[tostring(unit.uid)] = {strength=Battle.strength(state,unit),seat=p,row=r,pos=pos}
       end
     end
     for _, chain in ipairs(Chains.find(player)) do
@@ -32,7 +32,7 @@ return function(receiver, payload)
   if prompt and prompt.context and prompt.context.op=='deploy_attack' then
     local source=state.last_played
     if source then
-      for _,target in ipairs(Battle.attack_targets(state,seat)) do
+      for _,target in ipairs(Battle.attack_targets(state,seat,source)) do
         info.attackPreview[tostring(target.uid)]=Battle.attack_power(state,source,target)
       end
     end
@@ -40,15 +40,15 @@ return function(receiver, payload)
   for i, unit in ipairs(state.players[seat].hand) do
     local ok, reason = Battle.playable(state,seat,i)
     local side=Battle.deploy_side(seat,unit.card)
-    info.hand[i] = {ok=ok, reason=reason, side=side}
+    local r=Battle.placement_row(unit.card)
+    info.hand[i] = {ok=ok, reason=reason, side=side, row=r}
     if ok and unit.uid==view.previewUid and unit.card.type=='Unit' and not unit.card.replaces then
       info.slots={{},{}}
-      for r,row in ipairs(state.players[side].rows) do
-        for pos=1,#row+1 do
-          local ch=Placement.preview(state.players[side],r,pos,unit.card)
-          info.slots[r][pos]={cross=ch and ch.cross,chain=ch and ch.length,
-            bonus=Placement.bonus(unit.card,r),endpoint=unit.card.bridge and pos==#row+1}
-        end
+      local last=#state.players[side].rows[r]+1
+      for pos=1,last do
+        local ch=Placement.preview(state.players[side],r,pos,unit.card)
+        info.slots[r][pos]={cross=ch and ch.cross,chain=ch and ch.length,
+          bonus=Placement.bonus(unit.card,r),endpoint=unit.card.bridge and pos==last}
       end
     end
   end

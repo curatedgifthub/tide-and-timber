@@ -80,7 +80,7 @@ function Smoke.new(app,scenario)
             else
               local side=B.deploy_side(me,card)
               if shots<1 or (card.agent and shots<2) then shots=shots+1;capture(card.agent and "agent" or "placing") end
-              click("slot-"..side.."-"..rng:random(2).."-1")
+              click("slot-"..side.."-"..B.placement_row(card).."-1")
             end
           end
         end

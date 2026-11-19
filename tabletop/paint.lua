@@ -132,13 +132,12 @@ function P.card(card,x,y,w,h,opt)
   opt=opt or {}
   local spec=Lib.specs[card.faction]
   local tiny=h<120
-  local tags={}
+  local tags={card.designation}
   if opt.linked then tags[#tags+1]="Bridge chain"
   else
     if card.bridge and not opt.disabled then tags[#tags+1]="Bridge" end
     if opt.chain then tags[#tags+1]="Chain" end
   end
-  if opt.cover then tags[#tags+1]=opt.cover end
   if opt.fresh then tags[#tags+1]="New draw" end
   local nameHeight=tiny and 14 or 23
   local statHeight=tiny and 14 or 18

@@ -58,7 +58,10 @@ try {
     assert.match(face,/<span class="card-image"><img[^>]+><\/span><span class="card-caption">/)
     const visible=(face+inspect(card)).replace(/<[^>]+>/g,'')
     assert.doesNotMatch(visible,/\b(?:rank|uncommon|rare|common)\b|(?:Super|Fantasy|Water):\d+/i)
-    if (card.type==='Unit') assert.ok(visible.includes(card.health+'/'+card.health+' HP'))
+    if (card.type==='Unit') {
+      assert.match(card.designation,/^[FB](?:F|B|FB)$/)
+      assert.ok(face.includes(card.designation) && visible.includes(card.health+'/'+card.health+' HP'))
+    } else assert.equal(card.designation,undefined)
   }
   const oldComic=[66,61,15,27,32,57,71,72,73,74,75,78,2,11,20,21,62,8,12,14,24,30,47,49,51,61,57,15,27,30].map(n=>'Super:'+n)
   const custom=[...oldComic].reverse()
@@ -104,6 +107,20 @@ try {
     assert.doesNotMatch(html,/Attack with a unit|ready unit/i)
   }
   const actor=host.ready?host:guest, other=actor===host?guest:host
+  // A selected unit gets insertion markers only in its printed row and on its deployment side.
+  const preview=structuredClone(actor.view)
+  for (const card of Object.values(catalog.cards).filter(c=>c.type==='Unit' && !c.replaces && !c.requires_units)) {
+    const u={u:301,c:card.id,o:preview.seat}
+    preview.players[preview.seat-1].cards=[u]
+    preview.previewUid=u.u
+    const info=JSON.parse(derive(JSON.stringify(preview)))
+    const row=card.designation[0]==='F'?1:2
+    assert.equal(info.hand[0].row,row)
+    const markup=board({view:preview,ready:true,active:true,log:[]},catalog,info,u.u)
+    const markers=Array.from(markup.matchAll(/aria-label="Deploy to ([^"]+)"/g),m=>m[1])
+    assert.equal(markers.length,1)
+    assert.ok(markers[0].startsWith((card.agent?'Opponent':'You')+' '+(row===1?'Front':'Back')+' position 1'))
+  }
   const token=actor.api.read('auth')
   actor.api.save('auth',{...token,expires_at:0})
   const seq=actor.seq

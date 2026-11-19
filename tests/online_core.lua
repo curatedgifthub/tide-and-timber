@@ -43,7 +43,7 @@ local function decide(mirror,seat,rng)
   if #legal==0 or rng:random(14)==1 then return {type='pass'} end
   local i=legal[rng:random(#legal)];local card=s.players[seat].hand[i].card
   if card.type=='Unit' and not card.replaces then
-    local rows=s.players[B.deploy_side(seat,card)].rows;local row=rng:random(2)
+    local rows=s.players[B.deploy_side(seat,card)].rows;local row=B.placement_row(card)
     return {type='play',index=i,row=row,pos=rng:random(#rows[row]+1)}
   end
   return {type='play',index=i}
@@ -283,9 +283,11 @@ test("Refused requests: wrong turn, stale or repeated moves, strangers, bad room
   assert(act(mover,{type='play',index=99,row=1,pos=1}).error=='illegal')
   local unitIndex
   for i,c in ipairs(s.players[s.active].hand) do
-    if c.card.type=='Unit' then unitIndex=i;break end
+    if c.card.type=='Unit' and not c.card.replaces then unitIndex=i;break end
   end
-  assert(act(mover,{type='play',index=assert(unitIndex),row=1,pos=7}).error=='illegal')
+  local required=B.placement_row(s.players[s.active].hand[assert(unitIndex)].card)
+  assert(act(mover,{type='play',index=unitIndex,row=3-required,pos=1}).error=='illegal')
+  assert(act(mover,{type='play',index=unitIndex,row=required,pos=7}).error=='illegal')
   for _,bad in ipairs({{type='attack',attacker=1},{type='attack',attacker='2',target=3},{type='attack',attacker=1,target=2},{type='play'},{type='play',index='1'},{type='play',index=1.5,row=1,pos=1},{type='cheat'},{type='ai'},{}}) do
     local e=act(mover,bad).error;assert(e=='bad_request' or e=='illegal',json.encode(bad))
   end

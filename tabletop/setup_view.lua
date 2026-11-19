@@ -157,7 +157,7 @@ function View.builder(app)
   P.one(c.display_name or c.name,x+18,350,w-36,30,P.textColor,"serif")
   P.text(Text.stats(c),x+18,391,17,P.textColor,"bold")
   local hint=require("tabletop.deck_help").describe(c,cfg.decks[p])
-  local ability=c.text..(hint and "\n"..hint or "")
+  local ability=(c.designation and Text.rows(c).."\n" or "")..c.text..(hint and "\n"..hint or "")
   local top=425
   local size=17
   while size>12 do

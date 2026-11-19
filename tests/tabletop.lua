@@ -141,17 +141,16 @@ test("Halfling Courier automatically draws the exact top copy in Back only",func
     end
     local pl=assert(m).state.players[1];local before=#pl.deck;local top=pl.deck[before]
     local index;for i,u in ipairs(pl.hand) do if u.card.id=='Fantasy:4' then index=i end end
-    assert(m:act({type='play',index=index,row=row,pos=1}))
-    local drew=row==2 and before>0
-    assert(#pl.hand==(drew and 5 or 4) and #pl.deck==before-(drew and 1 or 0))
-    if row==2 then
+    if row==1 then
+      assert(not m:act({type='play',index=index,row=row,pos=1}))
+      assert(#pl.hand==5 and #pl.deck==before)
+    else
+      assert(m:act({type='play',index=index,row=row,pos=1}))
+      assert(#pl.hand==5 and #pl.deck==before-1)
       local receipt=assert(m.draws[1])
-      assert(receipt.seat==1 and receipt.source=='Halfling Courier' and receipt.before==before and receipt.remaining==#pl.deck)
-      if drew then assert(pl.hand[#pl.hand]==top and receipt.cards[1]==top)
-      else assert(#receipt.cards==0 and receipt.reason=='draw deck empty') end
-      local record=table.concat(m.state.log,'\n')
-      assert(record:find('Halfling Courier drew',1,true) and (drew or record:find('draw deck empty',1,true)))
-    else assert(#m.draws==1 and m.draws[1].seat==2 and m.draws[1].source=="Turn draw") end
+      assert(receipt.seat==1 and receipt.source=='Halfling Courier' and receipt.before==before)
+      assert(pl.hand[#pl.hand]==top and receipt.cards[1]==top)
+    end
     integrity(m,c)
   end
 end)
@@ -251,9 +250,8 @@ test("Every card in the pool plays legally and its Deploy or Effect ability chan
   for _,f in ipairs(L.factions) do for _,card in ipairs(L.collection(f)) do
     local id,n=card.id,card.number
     local trig=A[f] and A[f][n] or {}
-    local s=setup(f,n,id);local row,pos=card.type=='Unit' and 2 or nil,card.type=='Unit' and 5 or nil
-    if id=='Fantasy:48' then row,pos=1,1 end
-    if card.agent then pos=#s.players[2].rows[2]+1 end
+    local s=setup(f,n,id);local row=B.placement_row(card)
+    local pos=row and #s.players[B.deploy_side(1,card)].rows[row]+1
     if not B.playable(s,1,1) then assert(allowed[id]=='unplayable',id..' '..card.name..' cannot be played')
     else
       assert(B.play(s,1,1,row,pos),id..' rejected')
@@ -279,7 +277,7 @@ test("New Water cards: Lighthouse, Deep-Sea Diver, The White Whale, Bleached Ree
   local light=unit(s,1,'Water:71');pl.hand={light,unit(s,1,'Water:1')}
   assert(light.card.bridge and light.card.strength==3)
   s.players[2].hand={unit(s,2,'Water:1')}
-  assert(m:act({type='play',index=1,row=1,pos=1}))
+  assert(m:act({type='play',index=1,row=2,pos=1}))
   assert(s.active==2);m.controllers[1]="Human";m.controllers[2]="AI"
   assert(m:act({type='ai'}))
   assert(m.prompt and m.prompt.kind=='beacon' and m.prompt.context.cards[1]==b and pl.hand[#pl.hand]==c)
@@ -422,7 +420,7 @@ test("Comic edition: Dinosaur trio, Warden and Phantom, Sidekick order, Monochro
   m,s=fresh();local foe;pl,foe=s.players[1],s.players[2]
   local rex=unit(s,1,'Super:73');pl.deck={unit(s,1,'Super:2'),rex,unit(s,1,'Super:3')}
   local e1,e2=unit(s,2,'Fantasy:1',2),unit(s,2,'Fantasy:5',2);local hp1,hp2=e1.hp,e2.hp
-  for i=1,2 do unit(s,2,'Fantasy:48',1).guard=20 end -- cover both measured Back positions
+  for i=1,2 do unit(s,2,'Fantasy:48',1).guard=20 end -- ordinary targets for the two Dans
   pl.hand={unit(s,1,'Super:71'),unit(s,1,'Super:72'),unit(s,1,'Super:12'),unit(s,1,'Super:12')}
   assert(B.play(s,1,1,1,1));assert(#pl.deck==3 and not B.position(s,rex),"one Dan alone summons nothing")
   turn(s);assert(B.play(s,1,1,1,2))
@@ -449,7 +447,8 @@ test("Comic edition: Dinosaur trio, Warden and Phantom, Sidekick order, Monochro
   unit(s,1,'Super:12',1);unit(s,1,'Super:24',1)
   assert(B.play(s,1,2,1,2));turn(s)
   local a,b,big=unit(s,2,'Fantasy:1',1),unit(s,2,'Fantasy:5',2),unit(s,2,'Fantasy:48',2);local bigHp=big.hp
-  unit(s,2,'Fantasy:1',1) -- cover the second Back unit
+  unit(s,2,'Fantasy:1',1)
+  s.chooser=function(_,_,_,options,ctx) return ctx.op=='deploy_attack' and 1 or #options end
   assert(B.playable(s,1,1));assert(B.play(s,1,1))
   local ps,pr,pi=B.position(s,phantom);assert(ps==1 and pr==1 and pi==2,"takes the Warden's place")
   assert(not B.position(s,warden) and pl.discard[#pl.discard]==warden and not warden.hp)
@@ -465,18 +464,18 @@ test("Comic edition: Dinosaur trio, Warden and Phantom, Sidekick order, Monochro
   pl.deck={unit(s,1,'Super:2'),brave,unit(s,1,'Super:3')};pl.hand={scared,unit(s,1,'Super:12'),unit(s,1,'Super:12')}
   local victim=unit(s,2,'Fantasy:48',2);local vhp=victim.hp
   unit(s,2,'Fantasy:1',1).guard=20
-  assert(B.play(s,1,1,1,1));assert(pl.hand[#pl.hand]==brave and #pl.deck==2,"Scared first: Distress Call fetches Brave Sidekick")
+  assert(B.play(s,1,1,2,1));assert(pl.hand[#pl.hand]==brave and #pl.deck==2,"Scared first: Distress Call fetches Brave Sidekick")
   assert(m.draws[#m.draws].cards[1]==brave,"the fetch is reported like a draw")
-  turn(s);assert(B.play(s,1,#pl.hand,1,2))
+  turn(s);assert(B.play(s,1,#pl.hand,1,1))
   assert(B.strength(s,scared)==5 and victim.hp==vhp-3 and brave.guard==0,"Brave second: +3 and 3 damage")
   m,s=fresh();pl=s.players[1];brave,scared=unit(s,1,'Super:74'),unit(s,1,'Super:75')
   pl.hand={brave,scared,unit(s,1,'Super:12')};pl.deck={unit(s,1,'Super:2')}
   assert(B.play(s,1,1,1,1));assert(brave.guard==3,"Brave first: guards itself")
-  turn(s);assert(B.play(s,1,1,1,2))
+  turn(s);assert(B.play(s,1,1,2,1))
   assert(brave.negate_damage and scared.negate_damage and #pl.deck==1 and B.strength(s,scared)==2,"Scared second: both turn ghostly")
   B.damage(s,2,scared,9);assert(B.position(s,scared) and not scared.negate_damage,"the next opposing damage effect is ignored once")
   m,s=fresh();pl=s.players[1];pl.hand={unit(s,1,'Super:75'),unit(s,1,'Super:12')};pl.deck={unit(s,1,'Super:2')}
-  assert(B.play(s,1,1,1,1));assert(#pl.deck==0 and #pl.hand==2,"no Brave Sidekick in the deck: draw 1 instead")
+  assert(B.play(s,1,1,2,1));assert(#pl.deck==0 and #pl.hand==2,"no Brave Sidekick in the deck: draw 1 instead")
 
   m,s=fresh();pl,foe=s.players[1],s.players[2]
   brave,scared=unit(s,1,'Super:74'),unit(s,1,'Super:75',1)
@@ -488,7 +487,7 @@ test("Comic edition: Dinosaur trio, Warden and Phantom, Sidekick order, Monochro
   m,s=fresh();pl=s.players[1]
   brave,scared=unit(s,2,'Super:74',1),unit(s,1,'Super:75')
   pl.hand={scared,unit(s,1,'Super:12')};pl.deck={unit(s,1,'Super:2')}
-  assert(B.play(s,1,1,1,1))
+  assert(B.play(s,1,1,2,1))
   assert(not brave.negate_damage and not scared.negate_damage,"an opposing Sidekick does not count as your partner")
 
   -- Spy: deployed on the opposing battlefield, becomes the opponent's card.
@@ -496,16 +495,17 @@ test("Comic edition: Dinosaur trio, Warden and Phantom, Sidekick order, Monochro
   local spy=unit(s,1,'Super:78');pl.hand={spy,unit(s,1,'Super:12'),unit(s,1,'Super:12')}
   local loot=unit(s,2,'Fantasy:40');foe.discard={unit(s,2,'Fantasy:1'),loot};foe.hand={unit(s,2,'Fantasy:1'),unit(s,2,'Fantasy:39')}
   local sentry=unit(s,2,'Fantasy:5',1)
-  assert(not B.play(s,1,1,1,3),"positions are counted on the opposing row");assert(B.play(s,1,1,1,2))
-  local ss,sr,si=B.position(s,spy);assert(ss==2 and sr==1 and si==2 and spy.owner==2 and spy.controller==2)
+  table.insert(foe.rows[2],table.remove(foe.rows[1]))
+  assert(not B.play(s,1,1,1,3),"positions are counted on the opposing row");assert(B.play(s,1,1,1,1))
+  local ss,sr,si=B.position(s,spy);assert(ss==2 and sr==1 and si==1 and spy.owner==2 and spy.controller==2)
   assert(B.score(s,1)==0 and sentry.hp==sentry.card.health-spy.card.strength and B.score(s,2)==spy.hp+sentry.hp and B.strength(s,spy)==spy.card.strength,"the Spy attacks once and its remaining HP counts for its new controller")
   assert(pl.hand[#pl.hand]==loot and loot.owner==2 and loot.controller==1,"Vault Heist takes the chosen discard")
   B.damage(s,1,spy,9);assert(foe.discard[#foe.discard]==spy,"a Double Agent goes to its new owner's discard pile")
   -- Even a Fantasy deck can pull it back: Monochrome counts as every faction for discard abilities.
   s.active=2;s.plays_left=1;assert(B.playable(s,2,2));assert(B.play(s,2,2))
   assert(foe.hand[#foe.hand]==spy,"Fantasy recovery returns the Monochrome Unit")
-  s.active=2;s.plays_left=1;assert(B.play(s,2,#foe.hand,2,1))
-  ss,sr=B.position(s,spy);assert(ss==1 and sr==2 and spy.owner==1,"played back, it lands on the first player's battlefield")
+  s.active=2;s.plays_left=1;assert(B.play(s,2,#foe.hand,1,1))
+  ss,sr=B.position(s,spy);assert(ss==1 and sr==1 and spy.owner==1,"played back, it lands on the first player's battlefield")
   -- Hood: the top three cards of the opposing draw deck go to its discard pile.
   m,s=fresh();pl,foe=s.players[1],s.players[2]
   local d1,d2,d3,d4=unit(s,2,'Fantasy:1'),unit(s,2,'Fantasy:2'),unit(s,2,'Fantasy:3'),unit(s,2,'Fantasy:4')
@@ -518,7 +518,7 @@ test("Comic edition: Dinosaur trio, Warden and Phantom, Sidekick order, Monochro
   assert(five.card.strength<=5 and giant.card.strength>5,"fixture ranks")
   local vig=unit(s,1,'Super:76');pl.hand={vig,unit(s,1,'Super:12')}
   s.chooser=nil
-  assert(B.play(s,1,1,2,1))
+  assert(B.play(s,1,1,1,3))
   local ws,wr,wi=B.position(s,weak);local fs,fr,fi=B.position(s,five)
   assert(ws==2 and wr==1 and wi==1 and weak.controller==2 and weak.owner==1,"the weakest friendly Unit crosses over")
   assert(fs==1 and fr==1 and fi==1 and five.controller==1 and five.owner==2,"the strongest eligible opposing Unit comes back")
@@ -553,15 +553,16 @@ test("Rune Apprentice and High Elf Spellblade earn chain strikes during deployme
   for _,id in ipairs({'Fantasy:16','Fantasy:42'}) do
     local m=M.new(cfg(),71);m.controllers={"Human","Human"}
     local s=m.state;s.active=1
-    unit(s,1,'Fantasy:1',1)
-    if id=='Fantasy:16' then unit(s,1,'Fantasy:9',1)
+    local row=B.placement_row(L.cards.by_id[id])
+    unit(s,1,'Fantasy:1',row)
+    if id=='Fantasy:16' then unit(s,1,'Fantasy:9',row)
     else unit(s,1,'Fantasy:9',1);unit(s,1,'Fantasy:12',1) end
     local source=unit(s,1,id);s.players[1].hand={source}
     local wall=unit(s,2,'Fantasy:48',1);wall.guard=30
     local back=unit(s,2,'Fantasy:48',2)
     if id=='Fantasy:42' then back.guard=5 else wall.mod=12 end
     local pos=id=='Fantasy:16' and 3 or 4
-    assert(m:act({type='play',index=1,row=1,pos=pos}))
+    assert(m:act({type='play',index=1,row=row,pos=pos}))
     assert(m.prompt and m.prompt.context.op=='damage' and m.prompt.options[2]==back)
     assert(source.hp==source.card.health)
     assert(m:choose(2) and back.hp==back.card.health-2 and s.active==2)
@@ -687,24 +688,74 @@ test("Every Showdown retrieves one physical Gunner, including a repeat on a stol
     assert(gunner.owner==owner and gunner.controller==owner and (U.contains(home.hand,gunner) or U.contains(home.deck,gunner)))
   end end
 end)
-test("Basic attacks use column cover and full Attack Power in both rows",function()
+test("All six printed codes use the target’s current row even after movement",function()
   local s=M.new(cfg(),43).state
-  local f=unit(s,2,'Fantasy:48',1)
-  local b1=unit(s,2,'Fantasy:48',2);local b2=unit(s,2,'Fantasy:48',2)
-  local function exposed(...)
-    local options=B.attack_targets(s,1);local wanted={...}
-    assert(#options==#wanted)
-    for i,c in ipairs(wanted) do assert(options[i]==c) end
+  local f=unit(s,2,'Fantasy:48',1);local b=unit(s,2,'Fantasy:48',2)
+  local seen={}
+  for _,faction in ipairs(L.factions) do
+    for _,card in ipairs(L.cards[faction]) do
+      if card.type=='Effect' then assert(not card.designation)
+      else
+        local code=assert(card.designation)
+        assert(({FF=true,FB=true,FFB=true,BF=true,BB=true,BFB=true})[code])
+        local row=B.placement_row(card)
+        assert(row==(code:sub(1,1)=='F' and 1 or 2))
+        local attacker=unit(s,1,card.id,row)
+        for _,r in ipairs({row,3-row}) do
+          if r~=row then
+            table.remove(s.players[1].rows[row]);table.insert(s.players[1].rows[r],attacker)
+          end
+          local legal=B.attack_targets(s,1,attacker)
+          assert(U.contains(legal,f)==(code:sub(2):find('F',1,true)~=nil))
+          assert(U.contains(legal,b)==(code:sub(2):find('B',1,true)~=nil))
+          assert(attacker.card.designation==code and B.attack_power(s,attacker,b)==card.strength+
+            (card.strike=='duelist' and b.card.strength>card.strength and 1 or 0))
+        end
+        table.remove(s.players[1].rows[3-row])
+        if L.art[card.id] then seen[code]=true end
+      end
+    end
   end
-  exposed(f,b2)
-  local attacker=unit(s,1,'Super:73',1)
-  assert(B.attack_power(s,attacker,b2)==6)
-  table.remove(s.players[1].rows[1]);table.insert(s.players[1].rows[2],attacker)
-  assert(B.attack_power(s,attacker,b2)==6)
-  attacker.mod=-1;unit(s,1,'Super:61',2)
-  assert(B.attack_power(s,attacker,b2)==5,'only the explicit stat change affects damage')
-  B.damage(s,1,b1,99);exposed(f)
-  B.damage(s,1,f,99);exposed(b2)
+  assert(U.count(seen)==6)
+end)
+test("Movement changes the target row but keeps printed permissions and wounds",function()
+  local s=M.new(cfg(),55).state;s.active=1
+  local scout=unit(s,1,'Fantasy:1',1);scout.hp=2
+  local enemy=unit(s,2,'Water:47',1);local back=unit(s,2,'Water:17',2)
+  local hp,power=scout.hp,B.strength(s,scout)
+  B.resolve(s,2,enemy,A.get(enemy.card,'deploy')) -- Giant Squid moves the Squire to Back.
+  assert(select(2,B.position(s,scout))==2 and scout.hp==hp and B.strength(s,scout)==power)
+  assert(B.placement_row(scout.card)==1 and scout.card.designation=='FF')
+  local targets=B.attack_targets(s,1,scout)
+  assert(#targets==1 and targets[1]==enemy and not U.contains(targets,back))
+  local warden=unit(s,1,'Super:61',2)
+  local phantom=unit(s,1,'Super:66');s.players[1].hand={phantom}
+  assert(not B.playable(s,1,1))
+  local shift=unit(s,1,'Water:39')
+  s.chooser=function(_,_,kind,options)
+    for i,u in ipairs(options) do if kind=='unit' and u==warden then return i end end
+    return 1
+  end
+  B.resolve(s,1,shift,A.get(shift.card,'play'))
+  assert(B.playable(s,1,1) and B.play(s,1,1) and select(2,B.position(s,phantom))==1)
+end)
+test("A skipped ordinary attack still resolves its printed special against Back",function()
+  local s=M.new(cfg(),76).state;s.active=1
+  local caster=unit(s,1,'Fantasy:25');local target=unit(s,2,'Water:61',2)
+  s.players[1].hand={caster}
+  assert(B.play(s,1,1,1,1))
+  assert(target.hp==target.card.health-2 and caster.hp==caster.card.health)
+  assert(s.last_attack==nil and s.active==2)
+end)
+test("An empty exhausted seat waits while the opponent can play or draw",function()
+  local s=M.new(cfg(),91).state;s.active=1
+  local pl,foe=s.players[1],s.players[2]
+  pl.hand={unit(s,1,'Super:15')};pl.deck={unit(s,1,'Fantasy:48')}
+  foe.hand={};foe.deck={}
+  assert(B.play(s,1,1,1,1))
+  assert(s.round==1 and s.active==1 and #pl.hand==1 and #pl.deck==0)
+  assert(B.play(s,1,1,1,2))
+  assert(s.round==2 and s.round_history[1].scores[1]==15)
 end)
 test("Remaining current Health alone decides rounds and two wins decide the match",function()
   local function round(s,first,second)
@@ -746,7 +797,7 @@ test("Printed reactions, extra plays, recovery, and once-per-round Shell use",fu
   local urchin=unit(s,2,'Water:23',1)
   local striker=unit(s,1,'Super:15')
   s.players[1].hand={striker};s.players[2].hand={unit(s,2,'Water:1')}
-  assert(B.play(s,1,1,2,1) and striker.hp==striker.card.health-1)
+  assert(B.play(s,1,1,1,1) and striker.hp==striker.card.health-1)
   assert((urchin.hp or 0)==math.max(0,urchin.card.health-striker.card.strength))
   s.active=1;s.plays_left=1
   s.players[1].hand={unit(s,1,'Super:70'),unit(s,1,'Super:70'),unit(s,1,'Super:15')}

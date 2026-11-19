@@ -3,6 +3,11 @@ export function esc(value) {
 }
 export const name = card => card.display_name || card.name
 export const rowName = n => n === 1 ? 'Front' : 'Back'
+export function rowDescription(card) {
+  const code=card.designation
+  const rows={F:'Front',B:'Back',FB:'either row'}
+  return code+' · Deploy '+rows[code[0]]+' · Attack '+rows[code.slice(1)]
+}
 export function btn(label, action, value = '', style = '', disabled = false) {
   return `<button type="button" class="${style}" data-action="${esc(action)}" data-value="${esc(value)}" ${disabled ? 'disabled' : ''}>${esc(label)}</button>`
 }
@@ -12,7 +17,7 @@ export function art(card) {
 export const eventText = line => line.replace(/#\d+/g, '')
 export function cardFace(card, action, value, options = {}) {
   const {strength = card.strength, hp = card.health, selected, status, suppressed} = options
-  const labels = [card.bridge && !suppressed && status !== 'Bridge chain' && 'Bridge', status, options.cover].filter(Boolean)
+  const labels = [card.designation, card.bridge && !suppressed && status !== 'Bridge chain' && 'Bridge', status].filter(Boolean)
   const stats = card.type === 'Unit'
     ? `<span class="card-stats"><span aria-label="Attack Power ${strength}">${strength} ATK</span>
        <b class="unit-hp${hp < card.health ? ' wounded' : ''}" aria-label="Health ${hp} of ${card.health}">${hp}/${card.health} HP</b></span>`
@@ -29,5 +34,6 @@ export function inspect(card, unit, metrics) {
   return `<div class="inspection f-${esc(card.faction)}"><div class="portrait">${art(card)}</div>
     <h2 id="dialog-title">${esc(name(card))}</h2>
     ${card.type==='Unit' ? `<dl class="numbers"><div><dt>Attack Power</dt><dd>${strength}${strength!==card.strength ? ' <small>(base '+card.strength+')</small>' : ''}</dd></div><div><dt>Health</dt><dd>${unit?.hp ?? card.health}/${card.health}</dd></div></dl>` : '<small>Effect</small>'}
+    ${card.designation ? '<p>'+esc(rowDescription(card))+'</p>' : ''}
     <p class="rules">${esc(card.text)}</p>${tags.length ? '<p>'+esc(tags.join(' · '))+'</p>' : ''}</div>`
 }

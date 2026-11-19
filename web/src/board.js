@@ -1,4 +1,4 @@
-import {esc, name, rowName, btn, cardFace, art, eventText} from './ui.js'
+import {esc, name, rowName, rowDescription, btn, cardFace, art, eventText} from './ui.js'
 
 export function board(match, catalog, metrics, selected) {
   const v = match.view, me = v.seat, foe = 3-me, cards = catalog.cards
@@ -16,7 +16,7 @@ export function board(match, catalog, metrics, selected) {
   const title = `<div class="heading"><div><p class="eyebrow">${v.mode==='solo'?'Single player':'Two players'} · ${match.code?'Room '+esc(match.code):'Online match'}</p><h1>Battlefield</h1></div>
     <div class="actions">${btn('Combat & Bridge','row-guide')}${btn('Round '+v.round+' / 3','scores')}${closed ? btn('Match table','table') : btn('Leave match','leave','','quiet',match.busy)}</div></div>`
   function row(p, r) {
-    const units = v.players[p-1].rows[r-1], markers = placing && p === legal.side
+    const units = v.players[p-1].rows[r-1], markers = placing && p === legal.side && r === legal.row
     const slot = pos => {
       const preview=metrics.slots?.[r-1]?.[pos-1] || {}
       const label=preview.cross?'Bridge chain '+preview.chain:preview.endpoint?'Bridge end':
@@ -29,7 +29,7 @@ export function board(match, catalog, metrics, selected) {
       const stat = metrics.units[u.u]
       return (markers ? slot(i+1) : '') + cardFace(cards[u.c], 'unit', u.u,
         {strength:stat.strength, hp:u.hp, suppressed:u.dis,
-          cover:stat.cover,status:stat.cross ? 'Bridge chain' : stat.chain ? 'Chain '+stat.chain : ''})
+          status:stat.cross ? 'Bridge chain' : stat.chain ? 'Chain '+stat.chain : ''})
     }).join('') + (markers ? slot(units.length+1) : '')
     return `<div class="lane ${markers?'placing':''}"><div class="row-name"><strong>${rowName(r)}</strong></div>
       <div class="row-cards scroll" data-scroll="lane-${p}-${r}">${content || '<span class="empty">Empty row</span>'}</div></div>`
@@ -61,7 +61,7 @@ export function board(match, catalog, metrics, selected) {
     <aside class="command"><p class="eyebrow">Round ${v.round}</p><h2 aria-live="polite">${esc(turn)}</h2>
     ${v.prompt?.kind && match.ready ? btn('Resolve ability','choice','','primary') : ''}
     ${can && !placing ? '<p class="hint">Play a unit from your hand. Choose its position, then its attack target.</p>' : ''}
-    ${placing ? '<p class="hint">Place '+esc(name(picked))+' on a gold marker in '+(legal.side===me?'your':'the opposing')+' rows.</p>' : ''}
+    ${placing ? '<p class="hint">Place '+esc(name(picked))+' on a gold marker in '+(legal.side===me?'your':'the opposing')+' '+rowName(legal.row)+' row.</p>' : ''}
     ${can && legal?.ok && (picked.type==='Effect'||picked.replaces) ? btn(picked.replaces?'Play onto '+name(cards[picked.replaces]):'Play effect','play','','primary') : ''}
     ${can && metrics.school ? btn('School of Goldfish','school') : ''}
     ${can && v.extra ? btn('End extra plays','end') : ''}
@@ -91,7 +91,7 @@ export function choices(view, catalog, metrics) {
   }).join(' → ')
   const title=labels[ctx.op] || 'Resolve ability'
   const subtitle=[ctx.unit && label(ctx.unit), ctx.cards && (ctx.bottom?'From the bottom · ':'Examined · ')+ctx.cards.map(label).join(', '),
-    ctx.op==='deploy_attack' && 'Choose any Front unit or a Back unit without a defender at the same position.',
+    ctx.op==='deploy_attack' && rowDescription(cards[ctx.unit.c]),
     q.kind==='bottom_order' && 'Choose the next card in bottom-of-deck draw order.',ctx.row && rowName(ctx.row)+' row'].filter(Boolean).join(' · ')
   const options=q.options.map((o,i)=>{
     let text, detail='', image=''

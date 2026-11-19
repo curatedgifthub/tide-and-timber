@@ -96,10 +96,9 @@ function AI.decision(s,p,difficulty)
     local card=mine.hand[index].card
     if card.type=='Unit' and not card.replaces then
       local rows=s.players[B.deploy_side(p,card)].rows
-      for row=1,2 do
-        for pos=1,#rows[row]+1 do
-          moves[#moves+1]={type='play',index=index,row=row,pos=pos,value=evaluate(s,p,index,row,pos)}
-        end
+      local row=B.placement_row(card)
+      for pos=1,#rows[row]+1 do
+        moves[#moves+1]={type='play',index=index,row=row,pos=pos,value=evaluate(s,p,index,row,pos)}
       end
     else moves[#moves+1]={type='play',index=index,value=evaluate(s,p,index,1,1)} end
   end

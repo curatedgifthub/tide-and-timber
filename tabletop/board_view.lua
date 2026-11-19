@@ -23,7 +23,7 @@ local function row(app,p,r,y,chains)
   local stop=math.min(#cards,start+6)
   local unit=picked(app)
   -- A Double Agent is deployed on the other player's rows.
-  local placing=unit and B.deploy_side(m.seat,unit.card)==p
+  local placing=unit and B.deploy_side(m.seat,unit.card)==p and B.placement_row(unit.card)==r
   local gift=placing and p~=m.seat
   P.box(x,y,w,h,P.panel);P.border(x,y,w,h,placing and P.gold or P.rule,placing and .82 or .65)
   P.box(x,y,4,h,spec.color)
@@ -65,7 +65,7 @@ local function row(app,p,r,y,chains)
     for i=start,stop do
       local u=cards[i];local xx=left+10+(i-start)*pitch
       P.card(u.card,xx,y+3,cw,82,{chain=chains[u],linked=app.bridgeEnds[u],disabled=u.disabled,
-        strength=B.strength(s,u),hp=u.hp,cover=Placement.cover(pl,r,i),selected=app.inspected==u})
+        strength=B.strength(s,u),hp=u.hp,selected=app.inspected==u})
       if app.flash[u.uid] and app.flashTime>0 then P.border(xx-1,y+2,cw+2,84,P.bright,math.min(1,app.flashTime)) end
       if i>start and app.chainEdges[cards[i-1].uid.."/"..u.uid] then
         P.line(xx-18,y+44,xx-2,y+44,spec.color)
@@ -131,7 +131,7 @@ local function inspector(app,u)
   local stats=Text.stats(c,value,u.hp)
   if c.strength and value~=c.strength then stats=stats.."   (base "..c.strength.." ATK)" end
   P.one(stats,x+15,y+170,w-30,16,P.textColor,"bold")
-  local ability=c.text
+  local ability=c.designation and Text.rows(c).."\n"..c.text or c.text
   local top=y+197;local size=16
   while size>11 do
     local _,lines=P.font(size):getWrap(ability,w-30)
@@ -228,7 +228,7 @@ function V.draw(app)
       or chosen.card.agent and "Choose a gold marker on the opposing battlefield."
       or chosen.card.bridge and "Place at a right end to link Front and Back."
       or Placement.bonus(chosen.card,2) and "Back row bonus · "..Placement.bonus(chosen.card,2)
-      or "Choose a position, then an enemy to attack.")
+      or Text.rows(chosen.card))
     or "Play a unit to place it and attack."
   local perPage=app.handPageSize
   local pages=math.max(1,math.ceil(#hand/perPage))

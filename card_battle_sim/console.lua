@@ -41,7 +41,7 @@ local function read_name(prompt)
   end
 end
 local function stats(card)
-  return card.strength and (card.strength.." ATK   "..card.health.."/"..card.health.." HP") or "Effect"
+  return card.strength and (card.designation.."   "..card.strength.." ATK   "..card.health.."/"..card.health.." HP") or "Effect"
 end
 local function catalogue(f,filter)
   print("\n"..f.." catalog")
@@ -220,7 +220,7 @@ local function view_board(s)
     if #row==0 then print('  (empty)') end
     for pos,u in ipairs(row) do
       print(string.format('  [%d] %-23s ATK %-2d HP %d/%d',
-        pos,u.card.display_name or u.card.name,Battle.strength(s,u),u.hp,u.card.health))
+        pos,(u.card.display_name or u.card.name)..' '..u.card.designation,Battle.strength(s,u),u.hp,u.card.health))
     end
   end
   show_row(2,2);show_row(2,1)
@@ -290,9 +290,10 @@ local function match(config,profile)
           if index>0 then
             local card=s.players[1].hand[index]
             local row,pos
-            if card.card.type=='Unit' then
-              row=choice('Deploy row:',{'Front','Back'})
-              pos=integer('Insertion position (1 to '..(#s.players[1].rows[row]+1)..'):',1,#s.players[1].rows[row]+1)
+            if card.card.type=='Unit' and not card.card.replaces then
+              row=Battle.placement_row(card.card)
+              local last=#s.players[Battle.deploy_side(1,card.card)].rows[row]+1
+              pos=integer((row==1 and 'Front' or 'Back')..' position (1 to '..last..'):',1,last)
             end
             local ok,err=Battle.play(s,1,index,row,pos)
             if not ok then print('Illegal action: '..err) end

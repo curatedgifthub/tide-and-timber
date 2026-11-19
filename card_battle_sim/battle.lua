@@ -957,10 +957,14 @@ function B.new(deck1,deck2,opts)
   auto_pass(s)
   return s
 end
+-- First letter: hand deployment row. Remaining letters: ordinary attack targets.
+function B.placement_row(card)
+  if card.type=='Unit' then return card.designation:sub(1,1)=='F' and 1 or 2 end
+end
 -- Friendly Units that a replacing Unit (card.replaces) can be played onto.
 function B.hosts(s,p,card)
   local out={}
-  for _,u in ipairs(all_units(s,p)) do if u.card.id==card.replaces then out[#out+1]=u end end
+  for _,u in ipairs(s.players[p].rows[B.placement_row(card)]) do if u.card.id==card.replaces then out[#out+1]=u end end
   return out
 end
 -- Opposing Units that player p may take with a trade ability (printed Strength cap).
@@ -987,7 +991,7 @@ local function eligible_card(s,p,index)
   if ability and ability.requires_team and not combo(s,p,ability.names) then return false,'Required team missing' end
   if card.card.id=='Water:60' and #Chains.find(s.players[p])==0 then return false,'Requires an existing chain' end
   if card.card.replaces and #B.hosts(s,p,card.card)==0 then
-    return false,'Requires a '..C.by_id[card.card.replaces].name..' you control'
+    return false,'Requires a '..C.by_id[card.card.replaces].name..' in your '..(B.placement_row(card.card)==1 and 'Front' or 'Back')..' row'
   end
   if card.card.id=='Water:70' then
     local valid=false;for _,ch in ipairs(Chains.find(s.players[p])) do if ch.length>=5 then valid=true end end
@@ -1026,12 +1030,16 @@ local function can_reinforce(s,p)
   for i=1,#s.players[p].hand do if eligible_card(s,p,i) then return true end end
   return false
 end
--- Rows compact after moves and deaths. Current positions determine cover.
-function B.attack_targets(s,p)
-  local rows=s.players[other(p)].rows
+function B.attack_targets(s,p,attacker)
   local targets={}
-  for _,u in ipairs(rows[1]) do targets[#targets+1]=u end
-  for i=#rows[1]+1,#rows[2] do targets[#targets+1]=rows[2][i] end
+  local allowed=attacker.card.designation:sub(2)
+  for r,row in ipairs(s.players[other(p)].rows) do
+    if allowed:find(r==1 and 'F' or 'B',1,true) then
+      for _,u in ipairs(row) do
+        if u~=attacker then targets[#targets+1]=u end
+      end
+    end
+  end
   return targets
 end
 function B.attack_power(s,u,target)
@@ -1070,7 +1078,7 @@ local function finish_round(s)
   for _,pl in ipairs(s.players) do
     pl.passed=false;pl.bonus_next=nil
   end
-  s.chain_seen={};s.last_hold=nil;s.last_played=nil;s.last_attack=nil
+  s.chain_seen={};s.last_played=nil;s.last_attack=nil
   if s.round==3 or s.players[1].wins==2 or s.players[2].wins==2 then
     s.finished=true
     s.winner=s.players[1].wins==2 and 1 or s.players[2].wins==2 and 2 or 0
@@ -1110,20 +1118,20 @@ auto_pass=function(s)
   local pl=s.players[p]
   local opponent=other(p)
   local exhausted=#pl.deck==0
-  if exhausted and (B.score(s,p)==0 and B.score(s,opponent)>0
-      or s.players[opponent].passed or s.last_hold==opponent and not can_reinforce(s,opponent)) then
+  if exhausted and (s.players[opponent].passed or not can_reinforce(s,opponent)) then
     finish_round(s)
     if not s.finished then return auto_pass(s) end
   else
-    s.last_hold=exhausted and p or nil
     emit(s,pl.name..' has no legal play and waits for reinforcements.')
     return next_turn(s)
   end
 end
 local function deployment_attack(s,p,attacker)
-  local eligible=B.attack_targets(s,p)
-  U.remove(eligible,attacker)
-  if #eligible==0 then return end
+  local eligible=B.attack_targets(s,p,attacker)
+  if #eligible==0 then
+    emit(s,location(attacker)..' has no eligible ordinary attack target.')
+    return
+  end
   local target=pick_unit(s,p,eligible,{op='deploy_attack',unit=attacker})
   local power=B.attack_power(s,attacker,target)
   emit(s,location(attacker)..' attacks '..location(target)..' for '..power..'.')
@@ -1141,12 +1149,14 @@ function B.play(s,p,index,row,pos)
     host=B.choose(s,p,'unit',B.hosts(s,p,card.card),{op='replace'})
     if not host then return false,'Choose the Unit to replace' end
   elseif card.card.type=='Unit' then
-    if row~=1 and row~=2 then return false,'Select Front (1) or Back (2)' end
+    if row~=B.placement_row(card.card) then
+      return false,'Deploy this Unit in '..(B.placement_row(card.card)==1 and 'Front' or 'Back')
+    end
     local units=s.players[side].rows[row]
     if not pos or pos%1~=0 or pos<1 or pos>#units+1 then return false,'Invalid insertion position' end
   end
   measure(s,card,'plays')
-  s.last_hold=nil;s.last_played=card;s.last_attack=nil
+  s.last_played=card;s.last_attack=nil
   table.remove(hand,index);s.plays_left=s.plays_left-1;s.activation_count=0
   s.stats.played[p]=s.stats.played[p]+1
   if card.card.type=='Unit' then
@@ -1179,7 +1189,7 @@ function B.play(s,p,index,row,pos)
 end
 function B.school(s,p)
   if s.active~=p or not B.can_school(s,p) then return false,'School of Goldfish not available' end
-  s.last_hold=nil;s.last_attack=nil;s.school_used[p]=true;s.plays_left=s.plays_left-1;s.activation_count=0
+  s.last_attack=nil;s.school_used[p]=true;s.plays_left=s.plays_left-1;s.activation_count=0
   local hand=s.players[p].hand
   local cards={};for _,c in ipairs(hand) do cards[#cards+1]=c end
   s.players[p].hand={}

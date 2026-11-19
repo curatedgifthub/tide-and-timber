@@ -50,7 +50,7 @@ local function decide(session,rng)
   if #legal==0 or rng:random(14)==1 then return {type='pass'} end
   local i=legal[rng:random(#legal)];local card=s.players[seat].hand[i].card
   if card.type=='Unit' and not card.replaces then
-    local rows=s.players[B.deploy_side(seat,card)].rows;local row=rng:random(2)
+    local rows=s.players[B.deploy_side(seat,card)].rows;local row=B.placement_row(card)
     return {type='play',index=i,row=row,pos=rng:random(#rows[row]+1)}
   end
   return {type='play',index=i}

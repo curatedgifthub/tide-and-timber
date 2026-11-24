@@ -5,6 +5,7 @@ local Setup=require('setup')
 local Progression=require('progression')
 local Save=require('save')
 local Battle=require('battle')
+local U=require('util')
 local AI=require('ai')
 local Report=require('report')
 local Console={}
@@ -209,6 +210,10 @@ local function setup_menu(config,profile)
     end
   end
 end
+local function health(u)
+  if u.hp>u.card.health then return u.hp..' (base '..u.card.health..')' end
+  return u.hp..'/'..u.card.health
+end
 local function view_board(s)
   print(string.rep('=',78))
   print(string.format('ROUND %d/3 | wins: Player %d, Opponent %d | remaining HP: %d-%d | turn: %s',
@@ -219,8 +224,8 @@ local function view_board(s)
     print(label..':')
     if #row==0 then print('  (empty)') end
     for pos,u in ipairs(row) do
-      print(string.format('  [%d] %-23s ATK %-2d HP %d/%d',
-        pos,(u.card.display_name or u.card.name)..' '..u.card.designation,Battle.strength(s,u),u.hp,u.card.health))
+      print(string.format('  [%d] %-23s ATK %-2d HP %s',
+        pos,(u.card.display_name or u.card.name)..' '..u.card.designation,Battle.strength(s,u),health(u)))
     end
   end
   show_row(2,2);show_row(2,1)
@@ -231,6 +236,7 @@ local function view_board(s)
     print(string.format('%s: hand %d, draw %d, discard %d%s',pl.name,#pl.hand,#pl.deck,#pl.discard,
       pl.passed and ' (PASSED)' or ''))
   end
+  if s.players[1].search_notice then print(s.players[1].search_notice) end
   print('YOUR HAND:')
   for i,c in ipairs(s.players[1].hand) do
     local st=stats(c.card)
@@ -241,14 +247,23 @@ local function view_board(s)
 end
 local function human_chooser(s,actor,kind,options,context)
   if actor~=1 then return nil end
-  print('\nChoose '..kind..' target for '..(context and context.op or 'ability')..':')
+  context=context or {}
+  if context.op=='search' then
+    print((context.source or 'Search')..' examined:')
+    for _,card in ipairs(context.cards) do
+      print('  '..card.card.name..(U.contains(options,card) and ' (eligible)' or ' (ineligible)'))
+    end
+    print('Choose a card to add to your hand.')
+  elseif kind=='bottom_order' then
+    print((context.note or '')..' Choose which remaining bottom card will be drawn first.')
+  else print('\nChoose '..kind..' target for '..(context.op or 'ability')..':') end
   for i,item in ipairs(options) do
     local label
     if kind=='unit' then
       local p,r,pos=Battle.position(s,item)
-      label=string.format('%s | %s %s[%d] | ATK %d HP %d/%d',
+      label=string.format('%s | %s %s[%d] | ATK %d HP %s',
         item.card.display_name or item.card.name,p==1 and 'Player' or 'Opponent',r==1 and 'Front' or 'Back',pos,
-        Battle.strength(s,item),item.hp,item.card.health)
+        Battle.strength(s,item),health(item))
     elseif kind=='card' or kind=='bottom_order' then label=item.card.display_name or item.card.name
     elseif kind=='chain' then
       local names={};for _,u in ipairs(item.units) do names[#names+1]=u.card.name end
@@ -262,7 +277,8 @@ local function human_chooser(s,actor,kind,options,context)
     else label=tostring(item) end
     print('  ['..i..'] '..label)
   end
-  return integer('Target:',1,#options)
+  if context.optional then print('  [0] Done choosing') end
+  return integer('Target:',context.optional and 0 or 1,#options)
 end
 local function match(config,profile)
   local s=Battle.new(config.player_deck,config.ai_deck,{

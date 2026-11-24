@@ -73,6 +73,7 @@ local function evaluate(s,p,index,row,pos)
     if id=='Super:39' or id=='Fantasy:40' or id=='Water:37' then val=6 end
     if id=='Water:31' or id=='Super:33' or id=='Fantasy:32' then val=2+#B.units(s,p) end
     if id=='Super:38' or id=='Water:56' or id=='Fantasy:31' then val=2+#B.units(s,3-p) end
+    if id=='Water:67' then val=2+#B.units(s,3-p)+math.min(4,#theirs.hand) end
     if id=='Super:57' then
       for _,character in ipairs(A.get(card,'play')[1].characters) do
         local unit=C.by_id[character]
@@ -90,7 +91,17 @@ function AI.decision(s,p,difficulty)
   if B.can_school(s,p) then return {type='school'} end
   local legal=B.legal_indices(s,p)
   local mine=s.players[p]
-  if s.players[3-p].passed and B.score(s,p)>B.score(s,3-p) then return {type='pass'} end
+  local opponent=s.players[3-p]
+  local lead=B.score(s,p)-B.score(s,3-p)
+  if opponent.passed and lead>0 then return {type='pass'} end
+  if s.round<3 then
+    local spent=s.stats.played[p]-(mine.round_start_plays or 0)
+    local budget=math.max(1,math.floor((#mine.hand+#mine.deck+spent)/(4-s.round)))
+    -- Defend a lead with reserves, or concede an expensive early round while a loss is affordable.
+    if spent>=budget and (lead>0 or opponent.wins==0 and (lead < -6 or spent>=budget+2)) then
+      return {type='pass'}
+    end
+  end
   local moves={}
   for _,index in ipairs(legal) do
     local card=mine.hand[index].card

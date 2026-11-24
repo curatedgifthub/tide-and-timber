@@ -70,6 +70,10 @@ local function combo(s,p,names)
 end
 local function base_strength(s,u)
   local v=u.card.strength+(u.mod or 0)
+  local flood=s.players[u.controller].flood or 0
+  if flood>0 and is_deployed(s,u) and not immune_area(u) and not immune_reduction(s,u,other(u.controller)) then
+    v=v-flood
+  end
   if not u.disabled then
     local id=u.card.id
     if id=='Water:4' then
@@ -239,17 +243,17 @@ local function draw(s,p,n,source,turn_draw)
   return #cards
 end
 B.draw=draw
-local function choose_card(s,actor,kind,pile,predicate,optional)
+local function choose_card(s,actor,operation,pile,predicate,optional)
   local choices={}
   for _,card in ipairs(pile) do if not predicate or predicate(card) then choices[#choices+1]=card end end
-  return B.choose(s,actor,kind,choices,{op=kind,optional=optional})
+  return B.choose(s,actor,'card',choices,{op=operation,optional=optional})
 end
 local function recover(s,p,n,predicate,optional)
   local count=0
   for i=1,n do
     if #s.players[p].hand>=s.max_hand then break end
     local pile=s.players[p].discard
-    local card=choose_card(s,p,'card',pile,predicate,optional)
+    local card=choose_card(s,p,'recover',pile,predicate,optional)
     if not card then break end
     U.remove(pile,card);card.controller=p
     s.players[p].hand[#s.players[p].hand+1]=card;count=count+1
@@ -359,8 +363,16 @@ local function search_deck(s,actor,n,filter,full,from_bottom,source)
   end
   local eligible={}
   for _,card in ipairs(peek) do if qualifies(card) then eligible[#eligible+1]=card end end
+  local description=filter=='any' and 'card' or filter:gsub('(%l)(%u)','%1 %2')
+  local ability=source and location(source) or 'Search'
   local chosen
-  if #pl.hand<s.max_hand then chosen=B.choose(s,actor,'card',eligible,{op='search',cards=peek,bottom=from_bottom}) end
+  if #pl.hand<s.max_hand then
+    chosen=B.choose(s,actor,'card',eligible,{op='search',cards=peek,bottom=from_bottom,source=ability})
+  end
+  if chosen then pl.search_notice=ability..' added '..location(chosen)..' to your hand.'
+  elseif count==0 then pl.search_notice=ability..' found an empty draw deck.'
+  elseif #eligible==0 then pl.search_notice=ability..' found no '..description..' among the '..count..' examined.'
+  else pl.search_notice=ability..' could not add a card to your full hand.' end
   local where=from_bottom and 'the bottom of the draw deck' or 'the draw deck'
   if chosen then
     measure(s,source,'searched')
@@ -370,12 +382,16 @@ local function search_deck(s,actor,n,filter,full,from_bottom,source)
   else emit(s,pl.name..' searches '..where..' but takes no card.') end
   if full then s.rng:shuffle(pl.deck) else
     if chosen then U.remove(peek,chosen) end
-    for _,card in ipairs(peek) do U.remove(pl.deck,card) end
+    local bottom={}
     while #peek>0 do
-      local card=B.choose(s,actor,'bottom_order',peek,{op='bottom_order'})
+      local card=B.choose(s,actor,'bottom_order',peek,{op='bottom_order',note=pl.search_notice,
+        cards=count==1 and peek or nil})
       U.remove(peek,card)
+      U.remove(pl.deck,card)
       table.insert(pl.deck,1,card)
+      bottom[#bottom+1]=location(card)
     end
+    if #bottom>0 then pl.search_notice=pl.search_notice..' Bottom cards in draw order: '..table.concat(bottom,', ')..'.' end
   end
 end
 local function play_extra(s,actor,n)
@@ -388,7 +404,7 @@ local function play_extra(s,actor,n)
   s.plays_left=s.plays_left+n
   emit(s,s.players[actor].name..' gains '..n..' additional card play(s) this turn.')
 end
-local showdown
+local showdown,resolve_entry
 local function op_predicate(card,kind,operation)
   local c=card.card
   if kind=='any' then return true end
@@ -415,7 +431,7 @@ local function enter(s,actor,c,opname,verb)
   local pos=B.choose(s,actor,'position',positions,{op=opname,row=row,unit=c})
   table.insert(lane,pos,c)
   emit(s,location(c)..' '..verb..' '..(side~=actor and s.players[side].name..' ' or '')..(row==1 and 'Front' or 'Back')..'.')
-  B.resolve(s,actor,c,A.get(c.card,'deploy'),{})
+  resolve_entry(s,actor,c,row,false)
 end
 local function take_named(piles,id)
   for _,pile in ipairs(piles) do
@@ -528,7 +544,17 @@ function B.resolve(s,actor,source,operations,context)
       measure(s,source,'conditions_met')
       if op.if_ally and op.if_ally=='Super:75' and name=='damage' then measure(s,source,'named_bonus') end
       if op.if_ally and op.if_ally=='Super:74' and op.target=='self' then measure(s,source,'named_bonus') end
-      if name=='draw' then draw(s,actor,amount,source)
+      if name=='grow_hp' then
+        if is_deployed(s,source) then
+          source.hp=source.hp+amount
+          measure(s,source,'hp_gained',amount)
+          emit(s,location(source)..' gains '..amount..' HP ('..source.hp..' HP, base '..source.card.health..').')
+        end
+      elseif name=='flood' then
+        local foe=s.players[other(actor)]
+        foe.flood=(foe.flood or 0)+amount
+        emit(s,foe.name..' is flooded: eligible Units have −'..foe.flood..' Strength this round, including arrivals.')
+      elseif name=='draw' then draw(s,actor,amount,source)
       elseif name=='buff' or name=='debuff' or name=='damage' or name=='heal' or name=='guard' then
         local which=op.target
         local choices={}
@@ -607,7 +633,10 @@ function B.resolve(s,actor,source,operations,context)
       elseif name=='recover' then
         local n=recover(s,actor,amount,function(c)return op_predicate(c,op.target,op)end,op.optional)
         measure(s,source,'recovered',n)
-        if n==0 then measure(s,source,'empty_recoveries') end
+        if n==0 then
+          measure(s,source,'empty_recoveries')
+          emit(s,location(source)..' returned no card from discard to hand.')
+        end
         if n==0 and op.fallback_draw then draw(s,actor,1,source) end
       elseif name=='move' then
         local kind=op.n;local tkind=op.target
@@ -707,7 +736,7 @@ function B.resolve(s,actor,source,operations,context)
         end
       elseif name=='bottom_from_hand' or name=='discard_from_hand' then
         local hand=s.players[actor].hand
-        local c=choose_card(s,actor,'card',hand)
+        local c=choose_card(s,actor,name,hand)
         if c then U.remove(hand,c)
           if name=='bottom_from_hand' then table.insert(s.players[actor].deck,1,c);emit(s,s.players[actor].name..' returns a card from hand to the bottom of the draw deck.')
           else discard_card(s,c);emit(s,'Discards '..c.card.name..'.') end
@@ -737,7 +766,7 @@ function B.resolve(s,actor,source,operations,context)
       elseif name=='resurrect' then
         for j=1,op.count do
           local pile=s.players[actor].discard
-          local c=choose_card(s,actor,'card',pile,function(v)return op_predicate(v,op.filter,op) end,true)
+          local c=choose_card(s,actor,'resurrect',pile,function(v)return op_predicate(v,op.filter,op) end,true)
           if not c then break end
           U.remove(pile,c);measure(s,source,'recovered')
           enter(s,actor,c,'resurrect','resurrects into')
@@ -757,7 +786,7 @@ function B.resolve(s,actor,source,operations,context)
         if #s.players[actor].hand<s.max_hand and #pool>0 then
           local c
           if op.random or name=='steal_draw' then c=pool[name=='steal_draw' and #pool or s.rng:random(#pool)]
-          else c=choose_card(s,actor,'card',pool) end
+          else c=choose_card(s,actor,name,pool) end
           if c then U.remove(pool,c);c.controller=actor
             if name=='steal_discard' then measure(s,source,'recovered') end
             s.players[actor].hand[#s.players[actor].hand+1]=c
@@ -767,13 +796,9 @@ function B.resolve(s,actor,source,operations,context)
         local t=pick_unit(s,actor,all_units(s,other(actor)),{op='disable'})
         if t then t.disabled=true;emit(s,location(t)..' continuous abilities disabled.') end
       elseif name=='copy_deploy' then
-        local opts={};for _,u in ipairs(all_units(s,actor)) do
-          if u~=source and u.card.id~='Super:44' and A.get(u.card,'deploy') then opts[#opts+1]=u end end
-        local target=pick_unit(s,actor,opts,{op='copy_deploy'})
-        if target then emit(s,location(source)..' copies '..location(target)..' deploy ability.')
-          B.resolve(s,actor,source,A.get(target.card,'deploy'),{}) end
+        resolve_entry(s,actor,source,context.entry_row,false)
       elseif name=='echo_effect' then
-        local card=choose_card(s,actor,'card',s.players[actor].discard,function(v)return v.card.faction=='Super' and v.card.type=='Effect' end)
+        local card=choose_card(s,actor,'echo_effect',s.players[actor].discard,function(v)return v.card.faction=='Super' and v.card.type=='Effect' end)
         if card then emit(s,'Echoes '..card.card.name..' Effect ability.')
           B.resolve(s,actor,source,A.get(card.card,'play'),{}) end
       elseif name=='extras' then play_extra(s,actor,op.n)
@@ -839,11 +864,13 @@ local function record_chains(s)
       for _,larger in ipairs(groups) do
         if larger.length>ch.length then
           for start=1,larger.length-ch.length+1 do
-            local contains=true
+            local forward,reverse=true,true
             for i=1,ch.length do
-              if larger.units[start+i-1]~=ch.units[i] then contains=false;break end
+              local member=larger.units[start+i-1]
+              forward=forward and member==ch.units[i]
+              reverse=reverse and member==ch.units[ch.length-i+1]
             end
-            if contains then maximal=false;break end
+            if forward or reverse then maximal=false;break end
           end
           if not maximal then break end
         end
@@ -893,7 +920,8 @@ function B.check_chains(s,earned)
         local names={}
         for _,member in ipairs(ch.units) do names[#names+1]=location(member) end
         emit(s,'CHAIN '..ch.length..' ('..ch.direction..(ch.cross and ', Bridge' or '')..'): '..table.concat(names,' -> '))
-        emit(s,location(u)..' activates Chain '..u.card.chain..'.')
+        local title=u.card.text:match('Chain %d+ %- ([^:]+)')
+        emit(s,location(u)..' activates Chain '..u.card.chain..(title and ' — '..title or '')..'.')
         B.resolve(s,p,u,effects,{chain=ch})
         record_chains(s)
         resolved=true
@@ -1023,30 +1051,42 @@ function B.attack_targets(s,p,attacker)
   end
   return targets
 end
-function B.attack_power(s,u,target)
+function B.attack_power(s,u,target,profile)
   local power=current_strength(s,u)
-  if u.disabled then return power end
-  local trait=u.card.strike
+  local trait=not u.disabled and u.card.strike
   if trait=='hunter' and target.hp<target.card.health
-    or trait=='duelist' and current_strength(s,target)>current_strength(s,u)
+    or trait=='duelist' and current_strength(s,target)>power
     or trait=='formation' and #adjacent(s,u)>0 then power=power+1 end
+  local ops=A.get(profile or u.card,'strike')
+  if not ops then return power end
+  local op=ops[1]
+  if op.min_printed and target.card.strength<op.min_printed then return power end
+  local side,row=B.position(s,target)
+  if op.front_only and row~=1 then return power end
+  power=power+op.n
+  if op.wounded_bonus and target.hp<target.card.health then power=power+op.wounded_bonus end
+  if op.back_bonus and select(2,B.position(s,u))==2 then power=power+op.back_bonus end
+  if op.crowded_bonus and side and #s.players[side].rows[row]>=2 then power=power+op.crowded_bonus end
   return power
 end
-local function redeal(s)
-  local packs={{},{}}
+local function open_next_round(s)
+  -- Score has already been recorded. Cleanup is neither destruction nor a new deployment.
   for _,pl in ipairs(s.players) do
-    for _,zone in ipairs({pl.deck,pl.hand,pl.discard,pl.rows[1],pl.rows[2]}) do
-      for _,u in ipairs(zone) do
-        local home=u.home or u.owner
-        u.owner=home;u.controller=home;u.hp=nil;u.mod=0;u.guard=0
-        u.disabled=false;u.negate_damage=false;u.activated={};u.shell_used=false;u.fed=false
-        packs[home][#packs[home]+1]=u
-      end
+    for _,row in ipairs(pl.rows) do
+      for _,u in ipairs(row) do discard_card(s,u) end
     end
+    pl.rows={{},{}}
   end
   for p,pl in ipairs(s.players) do
-    pl.deck=packs[p];pl.hand={};pl.discard={};pl.rows={{},{}}
-    s.rng:shuffle(pl.deck);draw(s,p,Rules.starting_hand)
+    pl.flood=nil
+    pl.round_start_plays=s.stats.played[p]
+    for _,zone in ipairs({pl.deck,pl.hand,pl.discard}) do
+      for _,u in ipairs(zone) do
+        u.hp=nil;u.mod=0;u.guard=0;u.disabled=false;u.negate_damage=false
+        u.activated={};u.shell_used=false;u.fed=false
+      end
+    end
+    draw(s,p,Rules.between_round_draw)
   end
 end
 local function finish_round(s)
@@ -1054,7 +1094,10 @@ local function finish_round(s)
   local winner=first==second and 0 or first>second and 1 or 2
   local reason='remaining Health'
   if winner>0 then s.players[winner].wins=s.players[winner].wins+1 end
-  s.round_history[#s.round_history+1]={round=s.round,scores={first,second},winner=winner,reason=reason}
+  local passes={}
+  if s.players[other(s.active)].passed then passes[#passes+1]=other(s.active) end
+  if s.players[s.active].passed then passes[#passes+1]=s.active end
+  s.round_history[#s.round_history+1]={round=s.round,scores={first,second},winner=winner,reason=reason,passes=passes}
   emit(s,string.format('Round %d ends: %s %d, %s %d. %s',s.round,s.players[1].name,first,s.players[2].name,second,winner==0 and 'Tie.' or s.players[winner].name..' wins by '..reason..'.'))
   for _,pl in ipairs(s.players) do
     pl.passed=false;pl.bonus_next=nil
@@ -1070,7 +1113,7 @@ local function finish_round(s)
   s.round=s.round+1;s.active=other(prior_starter)
   s.current_round_starter=s.active
   s.plays_left=1
-  redeal(s)
+  open_next_round(s)
   emit(s,'Round '..s.round..' begins. '..s.players[s.active].name..' goes first.')
 end
 local function next_turn(s)
@@ -1107,23 +1150,48 @@ auto_pass=function(s)
     return next_turn(s)
   end
 end
-local function deployment_attack(s,p,attacker)
+local function deployment_attack(s,p,attacker,profile)
   local eligible=B.attack_targets(s,p,attacker)
   if #eligible==0 then
     emit(s,location(attacker)..' has no eligible ordinary attack target.')
     return
   end
-  local target=pick_unit(s,p,eligible,{op='deploy_attack',unit=attacker})
-  local power=B.attack_power(s,attacker,target)
+  local target=pick_unit(s,p,eligible,{op='deploy_attack',unit=attacker,profile=profile.id})
+  local power=B.attack_power(s,attacker,target,profile)
   emit(s,location(attacker)..' attacks '..location(target)..' for '..power..'.')
   measure(s,attacker,'attacks');measure(s,attacker,'modified_attacks',current_strength(s,attacker)~=attacker.card.strength and 1 or 0)
   damage(s,p,target,power,{source=attacker,kind='attack_damage'})
-  local result=target.hp and target.hp..'/'..target.card.health..' HP' or 'defeated'
+  local ops=A.get(profile,'strike')
+  if ops then
+    local op=ops[1]
+    if op.weaken_survivor and is_deployed(s,target) then buff(s,p,target,-op.weaken_survivor,false) end
+    if op.draw_if_destroyed and not is_deployed(s,target) then draw(s,p,op.draw_if_destroyed,attacker) end
+  end
+  local result=target.hp and target.hp..' HP' or 'defeated'
   s.last_attack=location(attacker)..' attacked '..location(target)..' ('..result..').'
 end
-local function strike_and_deploy(s,actor,unit,row)
-  deployment_attack(s,actor,unit)
-  B.resolve(s,actor,unit,A.get(unit.card,'deploy'),{entry_row=row})
+resolve_entry=function(s,actor,unit,row,attacks)
+  local profile=unit.card
+  local deploy=A.get(profile,'deploy')
+  if deploy and deploy[1].op=='copy_deploy' then
+    local choices={}
+    for _,ally in ipairs(all_units(s,actor)) do
+      local c=ally.card
+      if c.id~=profile.id and (A.get(c,'pre_attack') or A.get(c,'strike') or A.get(c,'deploy')) then
+        choices[#choices+1]=ally
+      end
+    end
+    local copied=pick_unit(s,actor,choices,{op='copy_deploy'})
+    if copied then
+      profile=copied.card
+      emit(s,location(unit)..' copies '..location(copied)..' deploy ability.')
+    end
+    deploy=copied and A.get(profile,'deploy') or nil
+  end
+  local context={entry_row=row}
+  B.resolve(s,actor,unit,A.get(profile,'pre_attack'),context)
+  if attacks then deployment_attack(s,actor,unit,profile) end
+  B.resolve(s,actor,unit,deploy,context)
 end
 
 showdown=function(s,actor,source,characters,earned)
@@ -1150,7 +1218,7 @@ showdown=function(s,actor,source,characters,earned)
   measure(s,source,'named_summons',#arrived);measure(s,source,'summon_plays')
   for _,unit in ipairs(arrived) do
     if B.position(s,unit)==actor then
-      strike_and_deploy(s,actor,unit,B.placement_row(unit.card))
+      resolve_entry(s,actor,unit,B.placement_row(unit.card),true)
       -- A defeat can close a gap and earn a chain before the next strike.
       if earned then
         for seat=1,2 do collect_triggers(s,seat,earned[seat]) end
@@ -1175,6 +1243,7 @@ function B.play(s,p,index,row,pos)
     if not pos or pos%1~=0 or pos<1 or pos>#units+1 then return false,'Invalid insertion position' end
   end
   measure(s,card,'plays')
+  s.players[p].search_notice=nil
   s.last_played=card;s.last_attack=nil
   table.remove(hand,index);s.plays_left=s.plays_left-1;s.activation_count=0
   s.stats.played[p]=s.stats.played[p]+1
@@ -1194,8 +1263,13 @@ function B.play(s,p,index,row,pos)
       emit(s,string.format('%s plays %s into %s%s position %d.',s.players[p].name,location(card),
         side~=p and s.players[side].name..' ' or '',row==1 and 'Front' or 'Back',pos))
     end
+    local chain=Chains.qualify(s.players[side],card,3,false)
+    if chain then
+      card.guard=card.guard+1
+      emit(s,location(card)..' earns 1 Guard for joining Chain '..chain.length..'.')
+    end
     collect_triggers(s,side,earned[side])
-    strike_and_deploy(s,p,card,row)
+    resolve_entry(s,p,card,row,true)
   else
     emit(s,s.players[p].name..' plays '..card.card.name..' (Effect).')
     B.resolve(s,p,card,A.get(card.card,'play'),{earned=earned})
@@ -1207,6 +1281,7 @@ function B.play(s,p,index,row,pos)
 end
 function B.school(s,p)
   if s.active~=p or not B.can_school(s,p) then return false,'School of Goldfish not available' end
+  s.players[p].search_notice=nil
   s.last_attack=nil;s.school_used[p]=true;s.plays_left=s.plays_left-1;s.activation_count=0
   local hand=s.players[p].hand
   local cards={};for _,c in ipairs(hand) do cards[#cards+1]=c end
@@ -1232,6 +1307,7 @@ function B.end_extra(s,p)
 end
 function B.pass(s,p)
   if s.active~=p or s.finished or s.players[p].passed then return false,'Cannot pass' end
+  s.players[p].search_notice=nil
   s.players[p].passed=true;s.plays_left=0
   emit(s,s.players[p].name..' passes the round.')
   next_turn(s)

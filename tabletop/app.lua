@@ -154,6 +154,13 @@ function App:who(p)
   if p==m.seat then return "You" end
   return m.controllers[p]=="AI" and "Computer" or "Opponent"
 end
+function App:roundEnding(r)
+  if not r.passes then return "" end
+  local first,last=r.passes[1],r.passes[2]
+  if last then return self:who(first).." passed, then "..self:who(last).." passed." end
+  if first then return self:who(first).." passed. "..self:who(3-first).." ran out of plays and draws." end
+  return "Both sides ran out of plays and draws."
+end
 function App:visible(p) return p==self.match.seat end
 function App:snapshot()
   local vals={};local s=self.match.state
@@ -197,7 +204,7 @@ function App:frame(draws)
     local r=s.round_history[#s.round_history];self.roundSeen=s.round
     local me=m.seat
     self:notice("Round "..r.round.."   ·   You "..r.scores[me].." to "..r.scores[3-me].."   ·   "..
-      (r.winner==0 and "Tied round" or r.winner==me and "You win the round" or self:who(3-me).." wins the round"))
+      (r.winner==0 and "Tied round" or r.winner==me and "You win the round" or self:who(3-me).." wins the round").." · "..self:roundEnding(r))
   end
 end
 function App:drawMessage()
@@ -240,23 +247,25 @@ function App:rounds()
   local m=self.match;local s=m.state;local me=m.seat;local entries={}
   for _,r in ipairs(s.round_history) do
     entries[#entries+1]=item("Round "..r.round.."   ·   "..r.scores[me].." to "..r.scores[3-me],nil,
-      r.winner==0 and "Tied round" or self:who(r.winner).." won"..(r.reason and " by "..r.reason or ""))
+      self:roundEnding(r).." "..(r.winner==0 and "Tied round" or self:who(r.winner).." won"..(r.reason and " by "..r.reason or "")))
   end
   if not s.finished then entries[#entries+1]=item("Round "..s.round.."   ·   "..B.score(s,me).." to "..B.score(s,3-me),nil,"In progress · total current Health") end
   self:list("Remaining Health","You to "..self:who(3-me):lower().."   ·   "..s.players[me].wins.." to "..s.players[3-me].wins.." round wins",entries)
 end
 function App:result()
   local m=self.match;local s=m.state;local me=m.seat
-  local rows={}
-  for _,r in ipairs(s.round_history) do rows[#rows+1]="R"..r.round.."   "..r.scores[me].." – "..r.scores[3-me] end
   local title
   if m.abandoned then title=m.left and m.left~=me and self:who(m.left).." left the match" or "The match was closed"
   elseif s.winner==0 then title="The match is drawn"
   elseif s.winner==me then title="You win the match"
   else title=self:who(3-me).." wins the match" end
-  self:list(title,#rows>0 and "Units surviving, you first     "..table.concat(rows,"     /     ") or "No round was completed.",{
+  local entries={
     item("Back to the match table",function() self:closeMatch() end,"Keep your deck and start another match"),
-    item("Review battlefield",function() self.modal=nil end,"Inspect the record, both discard piles, and round scores")})
+    item("Review battlefield",function() self.modal=nil end,"Inspect the record, both discard piles, and round scores")}
+  for _,r in ipairs(s.round_history) do
+    entries[#entries+1]=item("Round "..r.round.." · "..r.scores[me].." to "..r.scores[3-me],nil,self:roundEnding(r))
+  end
+  self:list(title,"Round scores show your remaining HP first.",entries)
 end
 function App:log()
   local entries={}
@@ -282,9 +291,11 @@ function App:pile(p,zone)
   self:list(self:who(p).."   /   "..(zone=="hand" and "Hand" or "Discard pile"),
     #pl[zone].." cards   ·   "..(allowed and Lib.label(pl.faction) or "Face down"),entries)
 end
-local verbs={grave_zone="Grave Whisper · choose a pile",grave_search="Choose a unit from your draw deck",grave_recover="Choose a unit from your discard pile",deploy_attack="Deployment attack · choose an eligible enemy",damage="Deal damage",debuff="Reduce Strength",buff="Increase Strength",heal="Restore Health",guard="Protect a Unit",
-  destroy="Destroy a Unit",move="Reposition",row="Choose a row",card="Choose a card",chain="Choose a chain",resurrect="Redeploy",
-  peek="Order the top cards",search="Search the draw deck",bottom_order="Order remaining cards",
+local verbs={grave_zone="Grave Whisper · choose a pile",grave_search="Draw deck → hand",grave_recover="Discard pile → hand",deploy_attack="Deployment attack · choose an eligible enemy",damage="Deal damage",debuff="Reduce Strength",buff="Increase Strength",heal="Restore Health",guard="Protect a Unit",
+  destroy="Destroy a Unit",move="Reposition",row="Choose a row",card="Choose a card",chain="Choose a chain",resurrect="Discard pile → battlefield",recover="Discard pile → hand",
+  bottom_from_hand="Hand → bottom of draw deck",discard_from_hand="Hand → owner’s discard pile",
+  steal_hand="Opposing hand → your hand",steal_discard="Opposing discard → your hand",echo_effect="Copy an Effect in discard",
+  peek="Order the top cards",search="Add an examined card to hand",bottom_order="Place remaining cards on the bottom",
   chain_activation="Resolve a chain ability",disable="Suppress an ability",copy_deploy="Copy a Deploy ability",
   beacon="Lighthouse · Guiding Beam",summon="Bring the Unit into play",replace="Choose the Unit to replace",
   give="Trade · choose the Unit you give",take="Trade · choose the Unit you take",reveal="Reveal opposing cards",
@@ -302,8 +313,10 @@ function App:promptDialog()
       local p,r,pos=B.position(m.state,u)
       detail=p and (self:who(p).."   ·   "..(r==1 and "Front" or "Back").." position "..pos.."   ·   "..Text.stats(card,B.strength(m.state,u),u.hp))
         or card.text
+      if ctx.op=="search" then title="Add to hand · "..title end
+      if ctx.op=="bottom_order" then title="Place on bottom · "..title end
       if ctx.op=="deploy_attack" then
-        detail=detail.." · Attack for "..B.attack_power(m.state,ctx.unit,u).." before protection"
+        detail=detail.." · Attack for "..B.attack_power(m.state,ctx.unit,u,Lib.cards.by_id[ctx.profile]).." before protection"
       end
     elseif q.kind=="chain" then
       local nums={};local names={}
@@ -334,9 +347,13 @@ function App:promptDialog()
   if ctx.op=="deploy_attack" then
     desc=Text.rows(ctx.unit.card)
   elseif ctx.op=="search" then
-    local names={};for _,c in ipairs(ctx.cards) do names[#names+1]=c.card.name end
-    desc=desc.."   ·   Examined "..(ctx.bottom and "from the bottom: " or "")..table.concat(names,", ")
-  elseif ctx.op=="bottom_order" then desc=desc.."   ·   Choose the next card in bottom-of-deck draw order."
+    local eligible,names={},{}
+    for _,c in ipairs(q.options) do eligible[c.uid]=true end
+    for _,c in ipairs(ctx.cards) do
+      names[#names+1]=c.card.name..(eligible[c.uid] and " (eligible)" or " (ineligible)")
+    end
+    desc=(ctx.source or "Search").." · Examined "..(ctx.bottom and "from the bottom · " or "")..table.concat(names,", ")
+  elseif ctx.op=="bottom_order" then desc=(ctx.note or "").." Choose which of these bottom cards will be drawn first."
   elseif ctx.unit then desc=desc.."   ·   "..ctx.unit.card.name end
   return {title=verbs[ctx.op] or "Resolve ability",subtitle=desc,items=items,page=self.promptPage,locked=true}
 end

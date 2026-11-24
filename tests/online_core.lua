@@ -66,6 +66,76 @@ test("JSON round trips, escapes, arrays and objects",function()
   assert(json.encode(3)=='3' and json.encode(2^31)=='2147483648' and not pcall(json.encode,0/0))
 end)
 
+test("Drone Scout keeps examined copies in their zones across private choices and replay",function()
+  local cfg={mode='duel',factions={'Super','Water'},decks={{},{}}}
+  L.starter(cfg,1,30);L.starter(cfg,2,30)
+  for _,case in ipairs({{61,0},{12,1},{1684,2}}) do
+    local seed,count=case[1],case[2]
+    local joined,snap=Server.handle({op='join',seq=0,config={mode='duel',factions={'Super'},decks={cfg.decks[1]}},
+      seed=seed,player={faction='Water',deck=cfg.decks[2]}})
+    assert(joined.ok)
+    local opening=Server.restore(snap)
+    local pl=opening.players[1];local scout
+    for i,u in ipairs(pl.hand) do if u.card.id=='Super:6' then scout=i end end
+    local req={op='act',seat=1,config=cfg,seq=1,action={type='play',index=assert(scout),row=2,pos=1}}
+    local chosen
+    local ordered={}
+    local examined={}
+    for i=#pl.deck,#pl.deck-2,-1 do examined[pl.deck[i].uid]=pl.deck[i].card end
+    local prompts=0
+    while true do
+      local result,final=Server.handle(req,snap)
+      assert(result.ok,result.message)
+      local mine,foe=result.store.views['1'],result.store.views['2']
+      assert(not foe.players[1].searchNotice and not foe.players[1].cards)
+      local q=mine.prompt
+      if not q then
+        local actual=Server.restore(assert(final)).players[1]
+        assert(#actual.hand==(count==0 and 4 or 5) and #actual.deck==(count==0 and 25 or 24))
+        assert(prompts==2)
+        local bottom=chosen and 2 or 3
+        for i,uid in ipairs(ordered) do assert(actual.deck[bottom-i+1].uid==uid) end
+        for i=1,bottom do
+          local uid=actual.deck[i].uid
+          assert(examined[uid] and uid~=chosen)
+          examined[uid]=nil
+        end
+        for i=1,22 do assert(actual.deck[bottom+i].uid==pl.deck[i].uid) end
+        if count==0 then
+          assert(actual.deck[3].card.id=='Super:32' and mine.players[1].searchNotice:find('no Super Effect',1,true))
+        else
+          assert(actual.hand[#actual.hand].uid==chosen)
+          assert(mine.players[1].searchNotice:find(examined[chosen].name,1,true))
+        end
+        assert(mine.players[1].searchNotice:find('Bottom cards in draw order',1,true))
+        break
+      end
+      prompts=prompts+1
+      assert(prompts<=2 and mine.players[1].deck==(chosen and 24 or 25))
+      assert(mine.players[1].hand+mine.players[1].deck==29 and foe.players[1].deck==mine.players[1].deck)
+      assert(foe.prompt.actor==1 and not foe.prompt.context and not foe.prompt.options)
+      local index=1
+      if q.context.op=='search' then
+        assert(prompts==1 and count>0 and #q.options==count and #q.context.cards==3)
+        for _,u in ipairs(q.context.cards) do assert(examined[u.u].id==u.c) end
+        for i,u in ipairs(q.options) do
+          assert(examined[u.u].type=='Effect' and examined[u.u].faction=='Super')
+          if u.c=='Super:57' then index=i end
+        end
+        chosen=q.options[index].u
+      else
+        assert(q.context.op=='bottom_order' and #q.options==(chosen and 2 or 3)-#ordered)
+        for i,u in ipairs(q.options) do
+          assert(examined[u.u] and u.u~=chosen)
+          if u.c=='Super:32' then index=i end
+        end
+        ordered[#ordered+1]=q.options[index].u
+      end
+      req.seq=result.store.seq;req.pending=result.store.pending;req.action={type='choose',index=index}
+    end
+  end
+end)
+
 test("A snapshot taken after every action continues exactly like an uninterrupted match",function()
   for i=1,24 do
     local f1,f2=L.factions[i%3+1],L.factions[(i+1)%3+1]

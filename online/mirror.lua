@@ -45,6 +45,7 @@ function Mirror:apply(v)
   for p=1,2 do
     local t,pl=v.players[p],s.players[p]
     pl.name,pl.faction,pl.wins,pl.passed=t.name,t.faction,t.wins,t.passed or false
+    pl.flood=t.flood;pl.search_notice=t.searchNotice
     pl.deck=blanks(t.deck)
     pl.rows={{},{}}
     for r=1,2 do for i,u in ipairs(t.rows[r]) do pl.rows[r][i]=self:instance(u,p) end end
@@ -56,14 +57,14 @@ function Mirror:apply(v)
     else pl.hand=blanks(t.hand) end
   end
   s.round_history={}
-  for i,r in ipairs(v.history) do s.round_history[i]={round=r.round,scores=r.scores,winner=r.winner,reason=r.reason} end
+  for i,r in ipairs(v.history) do s.round_history[i]={round=r.round,scores=r.scores,winner=r.winner,reason=r.reason,passes=r.passes} end
   -- The last card played is usually on a battlefield or in a discard pile already.
   s.last_played=v.last and (self.cache[v.last.u] or self:instance(v.last)) or nil
   local q=v.prompt
   if q and q.kind then
     local options={}
     for i,o in ipairs(q.options) do options[i]=self:option(o) end
-    local ctx={op=q.context.op,optional=q.context.optional,enemy=q.context.enemy,bottom=q.context.bottom,row=q.context.row}
+    local ctx={op=q.context.op,optional=q.context.optional,enemy=q.context.enemy,bottom=q.context.bottom,row=q.context.row,source=q.context.source,note=q.context.note,profile=q.context.profile}
     if q.context.cards then
       ctx.cards={}
       for i,c in ipairs(q.context.cards) do ctx.cards[i]=self.cache[c.u] or self:instance(c) end

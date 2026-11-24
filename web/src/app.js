@@ -2,7 +2,7 @@ import {starterVersion, upgradeStarters} from './draft.js'
 import {Api} from './api.js'
 import {Match} from './session.js'
 import {board, choices} from './board.js'
-import {esc, name, btn, art, cardFace, inspect, eventText} from './ui.js'
+import {esc, name, btn, art, cardFace, inspect, eventText, roundEnding} from './ui.js'
 
 const root = document.querySelector('#app'), dialog = document.querySelector('#dialog')
 let catalog, derive, api, match, draft, health = 'Checking server', healthOK = false
@@ -270,7 +270,7 @@ async function dispatch(action,value) {
   if (action==='history') return modal('Event history','<ol class="history">'+match.log.map(l=>'<li>'+esc(eventText(l))+'</li>').join('')+'</ol>')
   if (action==='scores') return modal('Round results',`<p>Total remaining Health at round end. You are ${esc(v.players[v.seat-1].name)}.</p>`+
     (v.history.length ? v.history.map(r=>`<div class="score-entry"><b>Round ${r.round}</b><span>${esc(v.players[0].name)} · ${r.scores[0]} / ${esc(v.players[1].name)} · ${r.scores[1]}</span>
-    <strong>${r.winner ? esc(v.players[r.winner-1].name)+' won by '+esc(r.reason) : 'Draw'}</strong></div>`).join('') : '<p>No completed rounds yet.</p>'))
+    <strong>${r.winner ? esc(v.players[r.winner-1].name)+' won by '+esc(r.reason) : 'Draw'}</strong><span>${esc(roundEnding(r,v))}</span></div>`).join('') : '<p>No completed rounds yet.</p>'))
 }
 
 document.addEventListener('click',async e=>{

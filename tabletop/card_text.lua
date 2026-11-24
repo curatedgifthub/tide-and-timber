@@ -11,6 +11,7 @@ function Text.rows(card)
 end
 function Text.stats(card,strength,hp)
   if card.type~="Unit" then return "Effect" end
-  return (strength or card.strength).." ATK   "..(hp or card.health).."/"..card.health.." HP"
+  local health=hp and hp>card.health and (hp.." HP · base "..card.health) or ((hp or card.health).."/"..card.health.." HP")
+  return (strength or card.strength).." ATK   "..health
 end
 return Text

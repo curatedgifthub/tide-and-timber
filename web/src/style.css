@@ -86,3 +86,5 @@ dialog::backdrop{background:#06120fe0}body:has(dialog[open]){overflow:hidden}.mo
 .placement-note{margin:6px 12px;color:var(--gold);font-size:.9rem}
 .bridge-example{display:grid;grid-template-columns:auto 1fr 1fr;gap:5px;align-items:center;margin-top:14px}
 .bridge-example span{background:#314739;padding:6px;border:1px solid #8b9b77;text-align:center}.example-end{grid-column:3}
+
+.pass-notice { padding: .65rem .85rem; border-left: 4px solid currentColor; font-weight: 700; }

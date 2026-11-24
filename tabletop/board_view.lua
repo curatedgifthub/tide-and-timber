@@ -40,6 +40,10 @@ local function row(app,p,r,y,chains)
   local function hint(i)
     local ch=app.previews[r][i]
     local preview=ch and (ch.cross and "Bridge chain " or "Chain ")..ch.length or Placement.bonus(unit.card,r)
+    if ch then preview=preview.." · +1 Guard" end
+    if unit.card.chain then
+      preview=(preview and preview.." · " or "")..(ch and ch.length>=unit.card.chain and "Activates Chain " or "Needs Chain ")..unit.card.chain
+    end
     if not preview and unit.card.bridge and i==#cards+1 then preview="Bridge end" end
     if gift then return "Position "..i.."   ·   "..(preview and "Gives the other side a "..preview or unit.card.name.." joins the other side") end
     return "Position "..i.."   ·   "..(preview or "Deploy "..unit.card.name)
@@ -100,7 +104,7 @@ local function scoreBar(app,p,x)
   P.icon(spec.emblem,x+16,102,12,spec.color)
   -- pl.name is how the battle record refers to this seat.
   P.label(app:who(p).."   /   "..pl.name,x+38,80,spec.color)
-  P.one(Lib.label(pl.faction),x+38,94,133,22,P.textColor,"serif")
+  P.one(Lib.label(pl.faction)..(pl.flood and " · Flood −"..pl.flood or ""),x+38,94,133,22,P.textColor,"serif")
   local score=s.finished and #s.round_history>0 and s.round_history[#s.round_history].scores[p] or B.score(s,p)
   P.one(score,x+165,83,51,41,P.textColor,"serif","right")
   P.text("HP",x+223,107,12,P.muted,"bold")
@@ -140,7 +144,10 @@ local function inspector(app,u)
   end
   P.text(ability,x+15,top,size,P.textColor,"sans",w-30)
   local tags={}
-  if u.activated and u.activated.chain then tags[#tags+1]="Chain used" end
+  if c.chain and u.hp then
+    local chain=Chains.qualify(app.match.state.players[u.controller],u,3,false)
+    tags[#tags+1]=u.activated.chain and "Chain used" or ((chain and "Chain "..chain.length or "No chain").." · needs "..c.chain)
+  end
   if (u.guard or 0)>0 then tags[#tags+1]="Guard "..u.guard end
   if u.negate_damage then tags[#tags+1]="Barrier" end
   if u.disabled then tags[#tags+1]="Suppressed" end
@@ -256,7 +263,10 @@ function V.draw(app)
     end,function() app.hovered=u end)
   end
   if #hand==0 then P.text("Hand empty",30,649,23,P.muted,"italic") end
-  if app.drawReceipt then
+  if s.players[me].search_notice then
+    P.box(28,767,1225,29,P.panel)
+    P.one(s.players[me].search_notice,40,771,1199,16,P.gold)
+  elseif app.drawReceipt then
     local event=app.drawReceipt
     local inspect=#event.cards>0
     P.box(28,767,1225,29,P.panel);P.box(28,767,3,29,P.gold)
@@ -267,8 +277,14 @@ function V.draw(app)
   battleLog(app)
   local x,y=925,622
   local actor=m.prompt and m.prompt.actor or s.active
-  P.label("Turn   /   "..app:who(actor),x,y,P.gold)
-  if m.mode=="duel" and m.phase=="playing" and (m.opponent_seen or 0)>30 then
+  local passStatus=s.players[foe].passed and (app:who(foe).." passed. Play on or pass to score.")
+    or s.players[me].passed and ("You passed. "..app:who(foe).." may keep playing.")
+  P.one(passStatus or ("Turn   /   "..app:who(actor)),x,y,328,passStatus and 18 or 15,P.gold,"bold")
+  local previous=s.round_history[#s.round_history]
+  if previous and previous.passes then
+    P.one("Round "..previous.round.." · "..app:roundEnding(previous),x,y+128,328,13,P.muted)
+  end
+  if not passStatus and m.mode=="duel" and m.phase=="playing" and (m.opponent_seen or 0)>30 then
     P.one("Opponent last seen "..math.floor(m.opponent_seen).." s ago",x+120,y,208,12,P.red,"bold","right")
   end
   if m.phase=="over" then

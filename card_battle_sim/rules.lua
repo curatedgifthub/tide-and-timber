@@ -1,6 +1,7 @@
 -- Temporary resolutions for underspecified cases. Read DECISIONS.md.
 return {
   starting_hand = 5,
+  between_round_draw = 2,
   min_deck_size = 20,
   max_deck_size = 30,
   max_activations_per_action = 200,

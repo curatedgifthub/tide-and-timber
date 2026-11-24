@@ -105,6 +105,15 @@ try {
       assert.ok(html.includes(hp) && prompt.includes(hp),'battlefield and choice show wounded HP')
     }
     assert.doesNotMatch(html,/Attack with a unit|ready unit/i)
+    const effect={u:401,c:'Super:57'}, gunner={u:402,c:'Super:32'}
+    view.prompt={kind:'card',context:{op:'search',source:'Drone Scout',cards:[effect,gunner]},options:[effect]}
+    const search=choices(view,catalog,metrics).body
+    assert.ok(search.includes('Building Showdown (eligible)') && search.includes('Alien Gunner (ineligible)'))
+    assert.ok(search.includes('Add to hand · Building Showdown'))
+    view.prompt={kind:'bottom_order',context:{op:'bottom_order',note:'Drone Scout found no Super Effect.'},options:[gunner]}
+    const ordering=choices(view,catalog,metrics).body
+    assert.ok(ordering.includes('no Super Effect') && ordering.includes('Place on bottom · Alien Gunner'))
+    assert.ok(cardFace(catalog.cards['Water:22'],'inspect',1,{hp:6}).includes('6 HP · base 4'))
   }
   const actor=host.ready?host:guest, other=actor===host?guest:host
   // A selected unit gets insertion markers only in its printed row and on its deployment side.
@@ -133,6 +142,9 @@ try {
   assert.deepEqual(posts[0], posts[1], 'retry must carry the original sequence and move id')
   await other.tick()
   assert.equal(other.ready,true)
+  const renderMatch=m=>board(m,catalog,JSON.parse(derive(JSON.stringify(m.view))),null)
+  assert.ok(renderMatch(other).includes('Opponent passed. You may keep playing'))
+  assert.ok(renderMatch(reopened).includes('You passed. Opponent may keep playing'))
   const before=posts.length
   drop='reply'
   await other.act({type:'pass'})
@@ -141,6 +153,8 @@ try {
   assert.equal(posts.length,before+1,'accepted input must not be resent at a later sequence')
   await reopened.tick()
   assert.deepEqual(other.log,reopened.log)
+  assert.deepEqual(reopened.view.history[0].passes,[actor.view.seat,other.view.seat])
+  assert.ok(renderMatch(reopened).includes('You passed, then Opponent passed.'))
   assert.equal(signups,2)
   assert.equal(refreshes,1)
   await other.leave()

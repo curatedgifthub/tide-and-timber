@@ -34,7 +34,7 @@ return function(receiver, payload)
     local source=prompt.context.unit
     if source then
       for _,target in ipairs(Battle.attack_targets(state,seat,source)) do
-        info.attackPreview[tostring(target.uid)]=Battle.attack_power(state,source,target)
+        info.attackPreview[tostring(target.uid)]=Battle.attack_power(state,source,target,require("data.cards").by_id[prompt.context.profile])
       end
     end
   end

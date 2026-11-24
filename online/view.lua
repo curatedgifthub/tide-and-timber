@@ -31,7 +31,7 @@ function View.prompt(q,seat)
   if q.actor~=seat then return {actor=q.actor} end
   local ctx=q.context
   local out={actor=q.actor,kind=q.kind,options={},
-    context={op=ctx.op,optional=ctx.optional or nil,enemy=ctx.enemy or nil,bottom=ctx.bottom or nil,row=ctx.row}}
+    context={op=ctx.op,optional=ctx.optional or nil,enemy=ctx.enemy or nil,bottom=ctx.bottom or nil,row=ctx.row,source=ctx.source,note=ctx.note,profile=ctx.profile}}
   for i,v in ipairs(q.options) do out.options[i]=option(v) end
   if ctx.cards then
     out.context.cards={}
@@ -49,9 +49,10 @@ function View.build(s,seat,extra)
     prompt=View.prompt(extra.prompt,seat)}
   for p=1,2 do
     local pl=s.players[p]
-    local t={name=pl.name,faction=pl.faction,wins=pl.wins,passed=pl.passed or nil,
+    local t={name=pl.name,faction=pl.faction,wins=pl.wins,passed=pl.passed or nil,flood=pl.flood,
       deck=#pl.deck,hand=#pl.hand,discard={},rows={{},{}}}
     if p==seat then
+      t.searchNotice=pl.search_notice
       t.cards={}
       for i,c in ipairs(pl.hand) do t.cards[i]=card(c) end
     end
@@ -59,7 +60,7 @@ function View.build(s,seat,extra)
     for r=1,2 do for i,u in ipairs(pl.rows[r]) do t.rows[r][i]=unit(u) end end
     v.players[p]=t
   end
-  for i,r in ipairs(s.round_history) do v.history[i]={round=r.round,scores={r.scores[1],r.scores[2]},winner=r.winner,reason=r.reason} end
+  for i,r in ipairs(s.round_history) do v.history[i]={round=r.round,scores={r.scores[1],r.scores[2]},winner=r.winner,reason=r.reason,passes=r.passes} end
   if extra.draws and #extra.draws>0 then
     v.draws={}
     for i,e in ipairs(extra.draws) do

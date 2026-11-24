@@ -243,6 +243,10 @@ test("Every card in the pool plays legally and its Deploy or Effect ability chan
     for i=1,3 do s.players[2].hand[i]=unit(s,2,'Water:'..(i+20)) end
     -- Amount prompts list the largest value first; the last entry would be "none".
     s.chooser=function(_,_,kind,options) return kind=='amount' and 1 or #options end
+    -- Keep a legal high-rank target alive so overkill cannot mask a strike modifier.
+    if A[f][n] and A[f][n].strike then
+      for r=1,2 do unit(s,2,'Fantasy:65',r).guard=12 end
+    end
     s.players[1].hand={unit(s,1,id),unit(s,1,f..':7'),unit(s,1,f..':8')}
     return s
   end
@@ -255,7 +259,7 @@ test("Every card in the pool plays legally and its Deploy or Effect ability chan
     if not B.playable(s,1,1) then assert(allowed[id]=='unplayable',id..' '..card.name..' cannot be played')
     else
       assert(B.play(s,1,1,row,pos),id..' rejected')
-      if trig.deploy or trig.play then
+      if trig.deploy or trig.pre_attack or trig.strike or trig.play then
         local plain=setup(f,n,id)
         A.get=function(c,t) if c.id==id then return nil end return realget(c,t) end
         local ok=pcall(B.play,plain,1,1,row,pos);A.get=realget;assert(ok)
@@ -324,7 +328,7 @@ test("A turn draws one card, extra plays share the turn, and exhausted decks sta
   assert(B.play(s,p,1));assert(s.extra_turn and #me.deck==15 and #foe.hand==5)
   assert(B.end_extra(s,p));assert(s.active==q and #foe.hand==6 and #foe.deck==14)
   assert(B.pass(s,q) and s.round==1 and B.pass(s,p) and s.round==2 and s.active==q)
-  assert(#me.hand==5 and #foe.hand==5 and #foe.deck==15)
+  assert(#me.hand==7 and #foe.hand==8 and #foe.deck==12)
   foe.deck={};local count=#foe.hand
   assert(B.draw(s,q,1)==0 and #foe.hand==count)
 end)
@@ -649,7 +653,7 @@ test("Rune Apprentice and High Elf Spellblade earn chain strikes during deployme
     assert(m:choose(2) and back.hp==back.card.health-2 and s.active==2)
   end
 end)
-test("A wipe allows reinforcements and passing redeals each selected deck",function()
+test("A wipe allows reinforcements and round cleanup preserves the existing piles",function()
   local c=cfg();local s=M.new(c,99).state;s.active=1
   local foe=unit(s,2,'Fantasy:12',1)
   local big=unit(s,1,'Fantasy:48');s.players[1].hand={big}
@@ -661,7 +665,8 @@ test("A wipe allows reinforcements and passing redeals each selected deck",funct
   assert(big.hp==big.card.health and B.strength(s,big)==big.card.strength)
   assert(B.pass(s,2) and s.round==1 and B.pass(s,1))
   assert(s.round_history[1].winner==1 and s.round_history[1].scores[1]==big.card.health)
-  assert(#s.players[1].hand==5 and #s.players[2].hand==5 and B.score(s,1)==0 and s.round==2)
+  assert(U.contains(s.players[1].discard,big) and U.contains(s.players[2].discard,foe))
+  assert(#s.players[1].hand==3 and #s.players[2].hand==8 and B.score(s,1)==0 and s.round==2)
 end)
 test("Wounded heal targets, recovery fallback, and an exhausted seat waiting for a legal draw",function()
   local s=M.new(cfg(),194).state;s.active=1
@@ -722,8 +727,8 @@ test("Spy's stolen Grave Acolyte chooses either personal pile across factions",f
     B.damage(s,2,acolyte,99)
     assert(U.contains(foe.discard,acolyte) and acolyte.owner==2)
     assert(B.pass(s,2) and B.pass(s,1) and s.round==2)
-    assert(U.contains(foe.deck,acolyte) or U.contains(foe.hand,acolyte))
-    assert(spy.owner==1 and spy.controller==1)
+    assert(U.contains(foe.discard,acolyte))
+    assert(spy.owner==2 and spy.controller==2 and U.contains(foe.discard,spy))
   end
 end)
 test("Every Showdown retrieves one physical Gunner, including a repeat on a stolen Showdown",function()
@@ -774,7 +779,7 @@ test("Every Showdown retrieves one physical Gunner, including a repeat on a stol
     if s.round==1 then assert(B.pass(s,s.active)) end
     assert(s.round==2)
     local home=s.players[owner]
-    assert(gunner.owner==owner and gunner.controller==owner and (U.contains(home.hand,gunner) or U.contains(home.deck,gunner)))
+    assert(gunner.owner==owner and gunner.controller==owner and U.contains(home.discard,gunner))
   end end
 end)
 test("All six printed codes use the target’s current row even after movement",function()
@@ -797,7 +802,10 @@ test("All six printed codes use the target’s current row even after movement",
           local legal=B.attack_targets(s,1,attacker)
           assert(U.contains(legal,f)==(code:sub(2):find('F',1,true)~=nil))
           assert(U.contains(legal,b)==(code:sub(2):find('B',1,true)~=nil))
-          assert(attacker.card.designation==code and B.attack_power(s,attacker,b)==card.strength+
+          local bonus={['Water:49']=2,['Water:18']=1,['Water:19']=3,['Water:41']=2,
+            ['Fantasy:6']=r==2 and 2 or 1,['Fantasy:25']=2,['Fantasy:30']=1,['Fantasy:54']=4,
+            ['Super:21']=2,['Super:30']=2}
+          assert(attacker.card.designation==code and B.attack_power(s,attacker,b)==card.strength+(bonus[card.id] or 0)+
             (card.strike=='duelist' and b.card.strength>card.strength and 1 or 0))
         end
         table.remove(s.players[1].rows[3-row])
@@ -828,12 +836,12 @@ test("Movement changes the target row but keeps printed permissions and wounds",
   B.resolve(s,1,shift,A.get(shift.card,'play'))
   assert(B.playable(s,1,1) and B.play(s,1,1) and select(2,B.position(s,phantom))==1)
 end)
-test("A skipped ordinary attack still resolves its printed special against Back",function()
+test("A deployment attack modifier cannot hit an ineligible row",function()
   local s=M.new(cfg(),76).state;s.active=1
   local caster=unit(s,1,'Fantasy:25');local target=unit(s,2,'Water:61',2)
   s.players[1].hand={caster}
   assert(B.play(s,1,1,1,1))
-  assert(target.hp==target.card.health-2 and caster.hp==caster.card.health)
+  assert(target.hp==target.card.health and caster.hp==caster.card.health)
   assert(s.last_attack==nil and s.active==2)
 end)
 test("An empty exhausted seat waits while the opponent can play or draw",function()
@@ -844,7 +852,7 @@ test("An empty exhausted seat waits while the opponent can play or draw",functio
   assert(B.play(s,1,1,1,1))
   assert(s.round==1 and s.active==1 and #pl.hand==1 and #pl.deck==0)
   assert(B.play(s,1,1,1,2))
-  assert(s.round==2 and s.round_history[1].scores[1]==15)
+  assert(s.finished and s.round_history[1].scores[1]==15 and s.round_history[2].winner==0 and s.round_history[3].winner==0)
 end)
 test("Remaining current Health alone decides rounds and two wins decide the match",function()
   local function round(s,first,second)
@@ -907,6 +915,101 @@ test("Only an explicitly required team blocks playing a team card",function()
   local n=#s.players[1].deck
   assert(not B.playable(s,1,1) and B.play(s,1,2))
   assert(#s.players[1].deck==n-2 and s.plays_left==2 and s.active==1)
+end)
+test("Apex Bite and Pursuit modify one chosen Front attack and trigger Spines once",function()
+  for _,wound in ipairs({0,1}) do
+    local m=M.new(cfg(),49);m.controllers={"Human","Human"}
+    local s=m.state;s.active=1
+    local shark=unit(s,1,'Water:49');s.players[1].hand={shark}
+    local urchin=unit(s,2,'Water:23',1);urchin.hp=urchin.hp-wound;urchin.guard=6
+    local other=unit(s,2,'Water:23',1);local back=unit(s,2,'Fantasy:48',2)
+    assert(m:act({type='play',index=1,row=1,pos=1}))
+    local q=m.prompt
+    assert(q.context.op=='deploy_attack' and #q.options==2 and q.options[1]==urchin)
+    assert(B.attack_power(s,shark,urchin)==(wound==0 and 7 or 10))
+    assert(m:choose(1) and not m.prompt and s.active==2)
+    assert(urchin.hp==(wound==0 and 2 or nil) and shark.hp==shark.card.health-1)
+    assert(other.hp==other.card.health and back.hp==back.card.health)
+  end
+end)
+test("Copycat checks another unit's printed Strength before the attack",function()
+  for _,ally in ipairs({'none','Super:32','Super:75'}) do
+    local s=M.new(cfg(),51).state;s.active=1
+    if ally~='none' then
+      local u=unit(s,1,ally,2);u.mod=ally=='Super:75' and 1 or -1
+    end
+    local cat=unit(s,1,'Super:51');s.players[1].hand={cat}
+    local target=unit(s,2,'Fantasy:48',1)
+    local power=ally=='Super:32' and 5 or 3
+    assert(B.play(s,1,1,1,1) and B.strength(s,cat)==power and target.hp==target.card.health-power)
+    assert(B.pass(s,2) and B.pass(s,1) and cat.mod==0 and U.contains(s.players[1].discard,cat))
+  end
+end)
+test("Dragon Magic at four and reversed Bridge segments give the paid unit one Guard",function()
+  for _,length in ipairs({3,4,5}) do
+    local s=M.new(cfg(),52).state;s.active=1
+    local first
+    if length==5 then
+      first=unit(s,1,'Fantasy:65',1);unit(s,1,'Fantasy:55',1)
+    elseif length==4 then first=unit(s,1,'Fantasy:4',2) end
+    local witch=unit(s,1,'Fantasy:8',2);first=first or witch
+    unit(s,1,'Fantasy:13',2)
+    local dragon=unit(s,1,'Fantasy:52');s.players[1].hand={dragon}
+    local draw=#s.players[1].deck
+    assert(B.play(s,1,1,2,#s.players[1].rows[2]+1))
+    assert(Chains.qualify(s.players[1],dragon,3,false).length==length and dragon.guard==1)
+    assert(s.stats.chains_completed[1]==1 and s.stats.chain_completions_by_length[length]==1)
+    local earns=length>=4
+    assert((dragon.activated.chain~=nil)==earns and #s.players[1].deck==draw-(earns and 1 or 0))
+    B.check_chains(s)
+    assert(s.stats.chain_activated[1]==(earns and 1 or 0) and dragon.guard==1)
+    assert(first.guard==(earns and 2 or 0) and first.mod==first.guard)
+  end
+end)
+test("All Wet applies to arrivals and respects immunities, controller changes and round expiry",function()
+  local s=M.new(cfg(),67).state;s.active=1
+  local mine=unit(s,1,'Fantasy:48',1)
+  local whale=unit(s,2,'Water:61',1);local turtle=unit(s,2,'Water:27',2)
+  local victim=unit(s,2,'Fantasy:25',2)
+  s.players[1].hand={unit(s,1,'Water:67'),unit(s,1,'Water:67')}
+  local shrimp=unit(s,2,'Water:19');s.players[2].hand={shrimp}
+  assert(B.play(s,1,1) and B.strength(s,victim)==victim.card.strength-2)
+  assert(B.play(s,2,1,1,2) and mine.hp==mine.card.health-4)
+  assert(B.play(s,1,1) and B.strength(s,shrimp)==0 and B.strength(s,victim)==0)
+  assert(B.strength(s,whale)==whale.card.strength and B.strength(s,turtle)==turtle.card.strength)
+  local trader=unit(s,1,'Super:76')
+  s.chooser=function(_,_,_,opts,ctx)
+    if ctx.op=='take' then for i,u in ipairs(opts) do if u==shrimp then return i end end end
+    return 1
+  end
+  B.resolve(s,1,trader,A.get(trader.card,'deploy'))
+  assert(shrimp.controller==1 and B.strength(s,shrimp)==3 and mine.controller==2 and B.strength(s,mine)==1)
+  assert(B.pass(s,2) and B.pass(s,1) and not s.players[2].flood)
+  assert(U.contains(s.players[2].discard,shrimp) and U.contains(s.players[1].discard,mine))
+end)
+test("Starfish grows on controller turns and scores excess HP while ordinary healing stays capped",function()
+  local s=M.new(cfg(),22).state;s.active=2
+  local star=unit(s,1,'Water:22',2);local troll=unit(s,1,'Fantasy:15',1);troll.hp=5
+  s.players[1].hand={unit(s,1,'Fantasy:13'),unit(s,1,'Super:15')}
+  assert(B.pass(s,2) and star.hp==5 and troll.hp==6)
+  assert(B.play(s,1,1,2,2) and s.active==1 and star.hp==6 and troll.hp==6)
+  local score=B.score(s,1)
+  assert(score==star.hp+troll.hp+s.players[1].rows[2][2].hp)
+  assert(B.pass(s,1) and s.round_history[1].scores[1]==score and not star.hp)
+end)
+test("Round cleanup keeps card identity, pile order and match flags",function()
+  local s=M.new(cfg(),81).state;s.active=2
+  local pl=s.players[1];local held=pl.hand[1];local front=unit(s,1,'Fantasy:65',1)
+  local back=unit(s,1,'Water:17',2);back.shell_used=true
+  local stolen=unit(s,2,'Super:32',1);stolen.owner=1
+  local old=unit(s,1,'Water:1');old.hp=nil;pl.discard={old}
+  s.school_used[1]=true
+  local deck={};for i,u in ipairs(pl.deck) do deck[i]=u end
+  assert(B.pass(s,2) and B.pass(s,1) and s.round==2)
+  assert(pl.hand[1]==held and pl.hand[#pl.hand-2]==deck[#deck] and pl.hand[#pl.hand]==deck[#deck-2])
+  for i,u in ipairs(pl.deck) do assert(u==deck[i]) end
+  assert(pl.discard[1]==old and pl.discard[2]==front and pl.discard[3]==back and pl.discard[4]==stolen)
+  assert(stolen.controller==1 and not back.shell_used and s.school_used[1])
 end)
 test("180 seeded full matches conserve selected copies across every action",function()
   local rng=U.rng(2026);local played={}

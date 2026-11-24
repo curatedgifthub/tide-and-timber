@@ -66,7 +66,7 @@ function Help.describe(card,deck)
     while strengths[lo-1] do lo=lo-1 end
     while strengths[hi+1] do hi=hi+1 end
     if hi-lo+1<card.chain then return 'Tag more consecutive base Strengths to reach Chain '..card.chain..'.' end
-    return 'Chain '..card.chain..' is supported by tagged base Strengths '..lo..'–'..hi..'.'
+    return 'Tagged ranks '..lo..'–'..hi..'. Chain '..card.chain..' also requires adjacent positions in a row or across a Bridge.'
   end
 end
 return Help
